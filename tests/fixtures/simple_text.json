@@ -1,0 +1,20 @@
+{
+  "id": "msg_simple_text",
+  "threadId": "thread_001",
+  "labelIds": ["INBOX", "UNREAD"],
+  "snippet": "Hello, this is a plain text email.",
+  "payload": {
+    "mimeType": "text/plain",
+    "headers": [
+      {"name": "Subject", "value": "Plain Text Email"},
+      {"name": "From", "value": "sender@example.com"},
+      {"name": "To", "value": "recipient@example.com"},
+      {"name": "Date", "value": "Mon, 15 Jan 2024 10:30:00 -0500"},
+      {"name": "Cc", "value": "cc@example.com"},
+      {"name": "Message-ID", "value": "<msg001@example.com>"}
+    ],
+    "body": {
+      "data": "SGVsbG8sIHRoaXMgaXMgYSBwbGFpbiB0ZXh0IGVtYWlsLgoKQmVzdCByZWdhcmRzLApTZW5kZXI="
+    }
+  }
+}

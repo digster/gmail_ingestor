@@ -1,0 +1,48 @@
+{
+  "id": "msg_multipart_mixed",
+  "threadId": "thread_004",
+  "labelIds": ["INBOX"],
+  "snippet": "Email with attachment.",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {"name": "Subject", "value": "Email With Attachment"},
+      {"name": "From", "value": "files@example.com"},
+      {"name": "To", "value": "recipient@example.com"},
+      {"name": "Date", "value": "Thu, 18 Jan 2024 16:45:00 -0800"}
+    ],
+    "body": {
+      "size": 0
+    },
+    "parts": [
+      {
+        "mimeType": "multipart/alternative",
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "mimeType": "text/plain",
+            "body": {
+              "data": "UGxlYXNlIGZpbmQgdGhlIGF0dGFjaGVkIGRvY3VtZW50Lg=="
+            }
+          },
+          {
+            "mimeType": "text/html",
+            "body": {
+              "data": "PGh0bWw-PGJvZHk-PHA-UGxlYXNlIGZpbmQgdGhlIDxiPmF0dGFjaGVkPC9iPiBkb2N1bWVudC48L3A-PC9ib2R5PjwvaHRtbD4="
+            }
+          }
+        ]
+      },
+      {
+        "mimeType": "application/pdf",
+        "filename": "document.pdf",
+        "body": {
+          "attachmentId": "att_001",
+          "size": 12345
+        }
+      }
+    ]
+  }
+}

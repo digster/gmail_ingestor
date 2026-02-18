@@ -1,0 +1,32 @@
+{
+  "id": "msg_multipart_alt",
+  "threadId": "thread_003",
+  "labelIds": ["INBOX", "IMPORTANT"],
+  "snippet": "This email has both text and HTML versions.",
+  "payload": {
+    "mimeType": "multipart/alternative",
+    "headers": [
+      {"name": "Subject", "value": "Multipart Alternative Email"},
+      {"name": "From", "value": "both@example.com"},
+      {"name": "To", "value": "recipient@example.com"},
+      {"name": "Date", "value": "Wed, 17 Jan 2024 09:15:00 +0000"}
+    ],
+    "body": {
+      "size": 0
+    },
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "body": {
+          "data": "VGhpcyBpcyB0aGUgcGxhaW4gdGV4dCB2ZXJzaW9uIG9mIHRoZSBlbWFpbC4KCkJlc3QgcmVnYXJkcw=="
+        }
+      },
+      {
+        "mimeType": "text/html",
+        "body": {
+          "data": "PGh0bWw-PGJvZHk-PHA-VGhpcyBpcyB0aGUgPGI-SFRNTDwvYj4gdmVyc2lvbiBvZiB0aGUgZW1haWwuPC9wPjxwPkJlc3QgcmVnYXJkczwvcD48L2JvZHk-PC9odG1sPg=="
+        }
+      }
+    ]
+  }
+}

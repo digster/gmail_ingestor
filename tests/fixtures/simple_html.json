@@ -1,0 +1,18 @@
+{
+  "id": "msg_simple_html",
+  "threadId": "thread_002",
+  "labelIds": ["INBOX"],
+  "snippet": "Hello, this is an HTML email.",
+  "payload": {
+    "mimeType": "text/html",
+    "headers": [
+      {"name": "Subject", "value": "HTML Email"},
+      {"name": "From", "value": "newsletter@example.com"},
+      {"name": "To", "value": "recipient@example.com"},
+      {"name": "Date", "value": "Tue, 16 Jan 2024 14:00:00 +0000"}
+    ],
+    "body": {
+      "data": "PCFET0NUWVBFIGh0bWw-PGh0bWw-PGJvZHk-PGgxPkhlbGxvIFdvcmxkPC9oMT48cD5UaGlzIGlzIGFuIDxzdHJvbmc-SFRNTDwvc3Ryb25nPiBlbWFpbCB3aXRoIDxhIGhyZWY9Imh0dHBzOi8vZXhhbXBsZS5jb20iPmEgbGluazwvYT4uPC9wPjwvYm9keT48L2h0bWw-"
+    }
+  }
+}
