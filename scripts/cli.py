@@ -33,6 +33,42 @@ def on_progress(progress: FetchProgress) -> None:
     )
 
 
+def _add_pagination_args(subparser: argparse.ArgumentParser) -> None:
+    """Add --limit, --offset, and --batch-size flags to a subparser."""
+    subparser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap total messages processed in this stage",
+    )
+    subparser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Skip the first N messages",
+    )
+    subparser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        dest="batch_size",
+        help="Override batch size for fetch/convert stages",
+    )
+
+
+def _validate_pagination_args(args: argparse.Namespace) -> None:
+    """Reject negative pagination values."""
+    if getattr(args, "limit", None) is not None and args.limit < 0:
+        print("Error: --limit must be non-negative", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "offset", 0) < 0:
+        print("Error: --offset must be non-negative", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "batch_size", None) is not None and args.batch_size <= 0:
+        print("Error: --batch-size must be positive", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -47,6 +83,7 @@ def main() -> None:
     fetch_parser = subparsers.add_parser("fetch", help="Fetch and convert emails")
     fetch_parser.add_argument("--label", "-l", help="Gmail label ID (default: from settings)")
     fetch_parser.add_argument("--query", "-q", help="Gmail search query")
+    _add_pagination_args(fetch_parser)
 
     # status command
     subparsers.add_parser("status", help="Show message counts by status")
@@ -60,17 +97,28 @@ def main() -> None:
     )
     discover_parser.add_argument("--label", "-l", help="Gmail label ID")
     discover_parser.add_argument("--query", "-q", help="Gmail search query")
+    _add_pagination_args(discover_parser)
 
     # fetch-pending command
-    subparsers.add_parser("fetch-pending", help="Fetch pending messages (Stage 2)")
+    fetch_pending_parser = subparsers.add_parser(
+        "fetch-pending", help="Fetch pending messages (Stage 2)"
+    )
+    _add_pagination_args(fetch_pending_parser)
 
     # convert-pending command
-    subparsers.add_parser("convert-pending", help="Convert fetched messages (Stage 3)")
+    convert_pending_parser = subparsers.add_parser(
+        "convert-pending", help="Convert fetched messages (Stage 3)"
+    )
+    _add_pagination_args(convert_pending_parser)
 
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    # Validate pagination args for commands that have them
+    if args.command in ("fetch", "discover", "fetch-pending", "convert-pending"):
+        _validate_pagination_args(args)
 
     settings = GmailIngesterSettings()
     setup_logging(settings.log_level)
@@ -87,7 +135,13 @@ def main() -> None:
         elif args.command == "fetch":
             label = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            progress = ingester.run(label_id=label, query=query)
+            progress = ingester.run(
+                label_id=label,
+                query=query,
+                limit=args.limit,
+                offset=args.offset,
+                batch_size=args.batch_size,
+            )
             print(f"\n\nComplete: {progress}")
 
         elif args.command == "status":
@@ -103,15 +157,28 @@ def main() -> None:
         elif args.command == "discover":
             label = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            count = ingester.run_discovery(label_id=label, query=query)
+            count = ingester.run_discovery(
+                label_id=label,
+                query=query,
+                limit=args.limit,
+                offset=args.offset,
+            )
             print(f"\n\nDiscovered {count} new message IDs")
 
         elif args.command == "fetch-pending":
-            count = ingester.run_fetch_pending()
+            count = ingester.run_fetch_pending(
+                limit=args.limit,
+                offset=args.offset,
+                batch_size=args.batch_size,
+            )
             print(f"\n\nFetched {count} messages")
 
         elif args.command == "convert-pending":
-            count = ingester.run_convert_pending()
+            count = ingester.run_convert_pending(
+                limit=args.limit,
+                offset=args.offset,
+                batch_size=args.batch_size,
+            )
             print(f"\n\nConverted {count} messages")
 
     except KeyboardInterrupt:

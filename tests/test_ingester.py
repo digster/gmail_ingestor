@@ -474,7 +474,7 @@ class TestProgressCallback:
         mock_raw_store: MagicMock,
         mock_writer: MagicMock,
     ) -> None:
-        """on_progress callback is invoked during run_fetch_pending() for each message."""
+        """on_progress callback is invoked during run_fetch_pending()."""
         progress_updates: list[FetchProgress] = []
 
         def capture_progress(progress: FetchProgress) -> None:
@@ -500,7 +500,9 @@ class TestProgressCallback:
             date=datetime(2024, 1, 1),
         )
         body = EmailBody(plain_text="Hello")
-        email = EmailMessage(message_id="msg1", thread_id="t1", header=header, body=body)
+        email = EmailMessage(
+            message_id="msg1", thread_id="t1", header=header, body=body,
+        )
         mock_parser.parse.return_value = email
         mock_raw_store.store.return_value = {}
         mock_tracker.get_message.return_value = None
@@ -518,8 +520,294 @@ class TestProgressCallback:
 
         ingester.run_fetch_pending()
 
-        # Should have progress updates during fetch stage
-        fetch_updates = [p for p in progress_updates if p.current_stage == "fetch"]
+        fetch_updates = [
+            p for p in progress_updates if p.current_stage == "fetch"
+        ]
         assert len(fetch_updates) >= 1
-        # At least one should show a fetched message
         assert any(p.messages_fetched >= 1 for p in fetch_updates)
+
+
+# ---------- Discovery pagination ----------
+
+
+class TestDiscoveryPagination:
+    """Tests for pagination in run_discovery()."""
+
+    def test_discovery_with_limit(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run_discovery(limit=15) stops after collecting 15 stubs across pages."""
+        page1 = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10)]
+        page2 = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10, 20)]
+        page3 = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(20, 30)]
+        mock_gmail_client.discover_message_ids.return_value = iter([page1, page2, page3])
+        mock_tracker.bulk_insert_pending.return_value = 0
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingester.run_discovery("INBOX", limit=15)
+
+        # Should have inserted 10 from page1 + 5 from page2
+        calls = mock_tracker.bulk_insert_pending.call_args_list
+        assert len(calls) == 2
+        assert len(calls[0][0][0]) == 10  # full page1
+        assert len(calls[1][0][0]) == 5   # first 5 of page2
+
+    def test_discovery_with_offset(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run_discovery(offset=3) skips first 3 stubs."""
+        page = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10)]
+        mock_gmail_client.discover_message_ids.return_value = iter([page])
+        mock_tracker.bulk_insert_pending.return_value = 7
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        total = ingester.run_discovery("INBOX", offset=3)
+
+        assert total == 7
+        calls = mock_tracker.bulk_insert_pending.call_args_list
+        assert len(calls) == 1
+        inserted_stubs = calls[0][0][0]
+        assert len(inserted_stubs) == 7
+        # Should start from m3 (skipping m0, m1, m2)
+        assert inserted_stubs[0] == ("m3", "t3")
+
+    def test_discovery_with_limit_and_offset(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """Offset=5 limit=10 with 20 available inserts exactly 10 after skip."""
+        page1 = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10)]
+        page2 = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10, 20)]
+        mock_gmail_client.discover_message_ids.return_value = iter([page1, page2])
+        mock_tracker.bulk_insert_pending.return_value = 0
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingester.run_discovery("INBOX", offset=5, limit=10)
+
+        calls = mock_tracker.bulk_insert_pending.call_args_list
+        total_stubs = sum(len(c[0][0]) for c in calls)
+        assert total_stubs == 10
+        # First batch: m5..m9 (5 stubs from page1 after skipping 5)
+        assert len(calls[0][0][0]) == 5
+        assert calls[0][0][0][0] == ("m5", "t5")
+        # Second batch: m10..m14 (5 stubs from page2)
+        assert len(calls[1][0][0]) == 5
+        assert calls[1][0][0][0] == ("m10", "t10")
+
+
+# ---------- Fetch pending pagination ----------
+
+
+class TestFetchPendingPagination:
+    """Tests for pagination in run_fetch_pending()."""
+
+    def test_fetch_pending_with_limit(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run_fetch_pending(limit=3) stops after fetching 3 messages."""
+        # Return 3 IDs in first batch (which is the limit), then stop
+        mock_tracker.get_pending_ids.side_effect = [["m1", "m2", "m3"], []]
+
+        header = EmailHeader(
+            subject="Test", sender="s@test.com", to="r@test.com",
+            date=datetime(2024, 1, 1),
+        )
+        body = EmailBody(plain_text="Hello")
+
+        def make_email(raw_msg: dict) -> EmailMessage:
+            msg_id = raw_msg["id"]
+            return EmailMessage(message_id=msg_id, thread_id="t1", header=header, body=body)
+
+        mock_parser.parse.side_effect = make_email
+        mock_gmail_client.fetch_messages_batch.return_value = [
+            {"id": "m1"}, {"id": "m2"}, {"id": "m3"},
+        ]
+        mock_raw_store.store.return_value = {}
+        mock_tracker.get_message.return_value = None
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        total = ingester.run_fetch_pending(limit=3)
+        assert total == 3
+
+    def test_fetch_pending_with_offset(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run_fetch_pending(offset=5) passes offset to get_pending_ids."""
+        mock_tracker.get_pending_ids.return_value = []
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingester.run_fetch_pending(offset=5)
+
+        mock_tracker.get_pending_ids.assert_called_with(
+            limit=tmp_settings.batch_size, offset=5,
+        )
+
+    def test_fetch_pending_with_custom_batch_size(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run_fetch_pending(batch_size=10) uses overridden batch size."""
+        mock_tracker.get_pending_ids.return_value = []
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingester.run_fetch_pending(batch_size=10)
+
+        mock_tracker.get_pending_ids.assert_called_with(limit=10, offset=0)
+
+
+# ---------- Convert pending pagination ----------
+
+
+class TestConvertPendingPagination:
+    """Tests for pagination in run_convert_pending()."""
+
+    def test_convert_pending_with_limit(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """run_convert_pending(limit=1) converts only 1 message."""
+        mock_tracker.get_fetched_ids.side_effect = [["msg1"], []]
+
+        raw_text_path = tmp_path / "raw" / "msg1.txt"
+        raw_text_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_text_path.write_text("Hello world", encoding="utf-8")
+
+        mock_tracker.get_message.return_value = {
+            "message_id": "msg1",
+            "subject": "Test",
+            "sender": "s@test.com",
+            "date": "2024-06-15T12:00:00",
+            "raw_text_path": str(raw_text_path),
+            "raw_html_path": "",
+            "status": "fetched",
+        }
+
+        header = EmailHeader(
+            subject="Test", sender="s@test.com", to="", date=datetime(2024, 6, 15, 12, 0, 0),
+        )
+        converted = ConvertedEmail(
+            message_id="msg1",
+            markdown="---\nsubject: Test\n---\nHello",
+            header=header,
+        )
+        mock_converter.convert.return_value = converted
+        mock_writer.write.return_value = tmp_path / "output" / "test.md"
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        total = ingester.run_convert_pending(limit=1)
+        assert total == 1
+
+
+# ---------- Full pipeline pagination ----------
+
+
+class TestRunPipelinePagination:
+    """Tests for pagination in the full run() pipeline."""
+
+    def test_run_full_pipeline_limit_caps_discovery(
+        self,
+        tmp_settings: GmailIngesterSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """run(limit=10) passes limit to discovery, batch_size to fetch/convert."""
+        page = [MessageStub(message_id=f"m{i}", thread_id=f"t{i}") for i in range(10)]
+        mock_gmail_client.discover_message_ids.return_value = iter([page])
+        mock_tracker.bulk_insert_pending.return_value = 10
+        mock_tracker.get_pending_ids.return_value = []
+        mock_tracker.get_fetched_ids.return_value = []
+
+        ingester = _build_ingester(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingester.run(label_id="INBOX", limit=10, batch_size=25)
+
+        # Discovery should have been called with limit
+        calls = mock_tracker.bulk_insert_pending.call_args_list
+        total_stubs = sum(len(c[0][0]) for c in calls)
+        assert total_stubs == 10
+
+        # Fetch/convert should use the custom batch size
+        mock_tracker.get_pending_ids.assert_called_with(limit=25, offset=0)
+        mock_tracker.get_fetched_ids.assert_called_with(limit=25, offset=0)

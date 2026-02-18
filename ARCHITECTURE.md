@@ -98,6 +98,9 @@ Atomic operations prevent corruption from mid-fetch crashes. O(1) dedup via PRIM
 ### Raw Email Preservation
 Original text/html saved to `output/raw/` during Stage 2. Enables re-conversion with different settings, debugging, and future analysis pipelines.
 
+### CLI Pagination (--limit, --offset, --batch-size)
+All three pipeline stages accept `limit`, `offset`, and `batch_size` parameters. In the full `run()` pipeline, `limit`/`offset` apply to discovery only (capping what enters the DB), while `batch_size` overrides the configured batch size for fetch and convert stages. For `fetch-pending`/`convert-pending`, `offset` uses SQL `OFFSET` on every query — this is correct because processed items transition out of the pending/fetched pool, keeping skipped rows stable across loop iterations.
+
 ### Trafilatura with Recall Bias
 `favor_recall=True` captures more content from email table-based layouts. Falls back to plain text body if trafilatura returns None.
 

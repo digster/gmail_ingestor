@@ -73,12 +73,23 @@ class EmailIngester:
 
         return self._client, self._tracker, self._raw_store, self._writer
 
-    def run(self, label_id: str | None = None, query: str | None = None) -> FetchProgress:
+    def run(
+        self,
+        label_id: str | None = None,
+        query: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        batch_size: int | None = None,
+    ) -> FetchProgress:
         """Run the full three-stage pipeline.
 
         Args:
             label_id: Gmail label ID (defaults to settings.label).
             query: Optional Gmail search query.
+            limit: Cap total messages discovered (applies to discovery only).
+            offset: Skip first N discovered messages (applies to discovery only).
+            batch_size: Override batch size for fetch/convert stages.
 
         Returns:
             FetchProgress with final counts.
@@ -91,9 +102,9 @@ class EmailIngester:
         self._notify()
 
         try:
-            self.run_discovery(label, query=query)
-            self.run_fetch_pending()
-            self.run_convert_pending()
+            self.run_discovery(label, query=query, limit=limit, offset=offset)
+            self.run_fetch_pending(batch_size=batch_size)
+            self.run_convert_pending(batch_size=batch_size)
 
             self._progress.current_stage = "complete"
             self._notify()
@@ -112,8 +123,21 @@ class EmailIngester:
 
         return self._progress
 
-    def run_discovery(self, label_id: str | None = None, query: str | None = None) -> int:
+    def run_discovery(
+        self,
+        label_id: str | None = None,
+        query: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> int:
         """Stage 1: Discover message IDs and insert as pending.
+
+        Args:
+            label_id: Gmail label ID (defaults to settings.label).
+            query: Optional Gmail search query.
+            limit: Cap total messages inserted. None means unlimited.
+            offset: Skip the first N discovered stubs before inserting.
 
         Returns the number of newly discovered IDs.
         """
@@ -124,20 +148,54 @@ class EmailIngester:
         self._notify()
 
         total_new = 0
+        total_seen = 0
+        total_collected = 0
+
         for page in client.discover_message_ids(
             label, self._settings.max_results_per_page, query=query
         ):
-            stubs = [(s.message_id, s.thread_id) for s in page]
-            inserted = tracker.bulk_insert_pending(stubs, label)
-            total_new += inserted
-            self._progress.ids_discovered += len(page)
-            self._notify()
-            logger.info("Discovery page: %d IDs (%d new)", len(page), inserted)
+            stubs_to_insert: list[tuple[str, str]] = []
+
+            for stub in page:
+                total_seen += 1
+
+                # Skip first `offset` stubs
+                if total_seen <= offset:
+                    continue
+
+                stubs_to_insert.append((stub.message_id, stub.thread_id))
+                total_collected += 1
+
+                if limit is not None and total_collected >= limit:
+                    break
+
+            if stubs_to_insert:
+                inserted = tracker.bulk_insert_pending(stubs_to_insert, label)
+                total_new += inserted
+                self._progress.ids_discovered += len(stubs_to_insert)
+                self._notify()
+                logger.info(
+                    "Discovery page: %d IDs (%d new)", len(stubs_to_insert), inserted
+                )
+
+            if limit is not None and total_collected >= limit:
+                break
 
         return total_new
 
-    def run_fetch_pending(self) -> int:
+    def run_fetch_pending(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        batch_size: int | None = None,
+    ) -> int:
         """Stage 2: Fetch pending messages in batches, parse, and save raw content.
+
+        Args:
+            limit: Cap total messages fetched. None means unlimited.
+            offset: Skip first N pending messages (SQL OFFSET on each query).
+            batch_size: Override settings.batch_size for this run.
 
         Returns the number of messages successfully fetched.
         """
@@ -147,10 +205,17 @@ class EmailIngester:
         self._notify()
 
         total_fetched = 0
-        batch_size = self._settings.batch_size
+        effective_batch_size = batch_size or self._settings.batch_size
 
         while True:
-            pending_ids = tracker.get_pending_ids(limit=batch_size)
+            query_limit = effective_batch_size
+            if limit is not None:
+                remaining = limit - total_fetched
+                if remaining <= 0:
+                    break
+                query_limit = min(effective_batch_size, remaining)
+
+            pending_ids = tracker.get_pending_ids(limit=query_limit, offset=offset)
             if not pending_ids:
                 break
 
@@ -204,8 +269,19 @@ class EmailIngester:
 
         return total_fetched
 
-    def run_convert_pending(self) -> int:
+    def run_convert_pending(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        batch_size: int | None = None,
+    ) -> int:
         """Stage 3: Convert fetched messages to markdown and write files.
+
+        Args:
+            limit: Cap total messages converted. None means unlimited.
+            offset: Skip first N fetched messages (SQL OFFSET on each query).
+            batch_size: Override settings.batch_size for this run.
 
         Returns the number of messages successfully converted.
         """
@@ -215,10 +291,17 @@ class EmailIngester:
         self._notify()
 
         total_converted = 0
-        batch_size = self._settings.batch_size
+        effective_batch_size = batch_size or self._settings.batch_size
 
         while True:
-            fetched_ids = tracker.get_fetched_ids(limit=batch_size)
+            query_limit = effective_batch_size
+            if limit is not None:
+                remaining = limit - total_converted
+                if remaining <= 0:
+                    break
+                query_limit = min(effective_batch_size, remaining)
+
+            fetched_ids = tracker.get_fetched_ids(limit=query_limit, offset=offset)
             if not fetched_ids:
                 break
 

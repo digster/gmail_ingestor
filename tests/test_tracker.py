@@ -207,6 +207,34 @@ class TestGetIds:
             assert tracker.get_pending_ids() == []
             assert tracker.get_fetched_ids() == []
 
+    def test_offset_for_pending_ids(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            for i in range(5):
+                tracker.insert_pending(f"m{i}", f"t{i}", "INBOX")
+
+            result = tracker.get_pending_ids(limit=100, offset=2)
+            assert len(result) == 3
+            # Ordered by created_at; first two should be skipped
+            assert result == ["m2", "m3", "m4"]
+
+    def test_offset_for_fetched_ids(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            for i in range(5):
+                tracker.insert_pending(f"m{i}", f"t{i}", "INBOX")
+                tracker.update_status(f"m{i}", "fetched")
+
+            result = tracker.get_fetched_ids(limit=100, offset=2)
+            assert len(result) == 3
+            assert result == ["m2", "m3", "m4"]
+
+    def test_offset_exceeds_count(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            for i in range(3):
+                tracker.insert_pending(f"m{i}", f"t{i}", "INBOX")
+
+            assert tracker.get_pending_ids(limit=100, offset=10) == []
+            assert tracker.get_fetched_ids(limit=100, offset=10) == []
+
 
 class TestCountByStatus:
     """count_by_status returns a dict of status -> count."""

@@ -11,6 +11,7 @@ Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown
 - **Trafilatura conversion**: HTML → text with `favor_recall=True` for email layouts
 - **YAML front matter**: Each markdown file includes subject, from, to, date metadata
 - **Progress callbacks**: `on_progress` hook for real-time TUI/GUI updates
+- **CLI pagination**: `--limit`, `--offset`, `--batch-size` flags for controlled runs
 
 ## Setup
 
@@ -71,6 +72,11 @@ uv run python scripts/cli.py discover --label INBOX
 uv run python scripts/cli.py fetch-pending
 uv run python scripts/cli.py convert-pending
 
+# Pagination: limit, offset, and batch-size
+uv run python scripts/cli.py discover --label INBOX --limit 10
+uv run python scripts/cli.py fetch-pending --limit 5 --batch-size 10
+uv run python scripts/cli.py fetch --label INBOX --limit 20 --offset 50 --batch-size 25
+
 # Check processing status
 uv run python scripts/cli.py status
 
@@ -97,10 +103,13 @@ labels = ingester.list_labels()
 # Run full pipeline
 progress = ingester.run(label_id="INBOX")
 
+# Run with pagination controls
+progress = ingester.run(label_id="INBOX", limit=20, offset=50, batch_size=25)
+
 # Or run stages independently
-ingester.run_discovery(label_id="INBOX")
-ingester.run_fetch_pending()
-ingester.run_convert_pending()
+ingester.run_discovery(label_id="INBOX", limit=10, offset=5)
+ingester.run_fetch_pending(limit=5, batch_size=10)
+ingester.run_convert_pending(limit=5, batch_size=10)
 
 ingester.close()
 ```

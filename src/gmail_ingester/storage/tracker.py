@@ -176,19 +176,21 @@ class FetchTracker:
         )
         self.conn.commit()
 
-    def get_pending_ids(self, limit: int = 100) -> list[str]:
+    def get_pending_ids(self, limit: int = 100, offset: int = 0) -> list[str]:
         """Get message IDs with 'pending' status."""
         rows = self.conn.execute(
-            "SELECT message_id FROM messages WHERE status = 'pending' ORDER BY created_at LIMIT ?",
-            (limit,),
+            "SELECT message_id FROM messages WHERE status = 'pending' "
+            "ORDER BY created_at LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [row["message_id"] for row in rows]
 
-    def get_fetched_ids(self, limit: int = 100) -> list[str]:
+    def get_fetched_ids(self, limit: int = 100, offset: int = 0) -> list[str]:
         """Get message IDs with 'fetched' status (ready for conversion)."""
         rows = self.conn.execute(
-            "SELECT message_id FROM messages WHERE status = 'fetched' ORDER BY created_at LIMIT ?",
-            (limit,),
+            "SELECT message_id FROM messages WHERE status = 'fetched' "
+            "ORDER BY created_at LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [row["message_id"] for row in rows]
 
