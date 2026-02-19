@@ -7,7 +7,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from gmail_ingester.core.models import ConvertedEmail
+from gmail_ingestor.core.models import ConvertedEmail
 
 logger = logging.getLogger(__name__)
 

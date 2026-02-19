@@ -1,4 +1,4 @@
-"""Frozen dataclasses for the Gmail Ingester domain model."""
+"""Frozen dataclasses for the Gmail Ingestor domain model."""
 
 from __future__ import annotations
 

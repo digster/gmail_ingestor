@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gmail_ingester.core.exceptions import GmailIngesterError, RateLimitError
-from gmail_ingester.core.gmail_client import GmailClient
-from gmail_ingester.core.models import MessageStub
+from gmail_ingestor.core.exceptions import GmailIngestorError, RateLimitError
+from gmail_ingestor.core.gmail_client import GmailClient
+from gmail_ingestor.core.models import MessageStub
 
 
 @pytest.fixture
@@ -63,10 +63,10 @@ class TestListLabels:
     def test_raises_gmail_error_on_api_failure(
         self, client: GmailClient, mock_service: MagicMock
     ) -> None:
-        """list_labels() wraps API exceptions in GmailIngesterError."""
+        """list_labels() wraps API exceptions in GmailIngestorError."""
         mock_service.users().labels().list().execute.side_effect = Exception("API unavailable")
 
-        with pytest.raises(GmailIngesterError, match="Failed to list labels"):
+        with pytest.raises(GmailIngestorError, match="Failed to list labels"):
             client.list_labels()
 
 
@@ -150,10 +150,10 @@ class TestDiscoverMessageIds:
     def test_raises_gmail_error_on_generic_api_failure(
         self, client: GmailClient, mock_service: MagicMock
     ) -> None:
-        """discover_message_ids() wraps non-429 errors in GmailIngesterError."""
+        """discover_message_ids() wraps non-429 errors in GmailIngestorError."""
         mock_service.users().messages().list().execute.side_effect = Exception("Server error 500")
 
-        with pytest.raises(GmailIngesterError, match="Failed to list messages"):
+        with pytest.raises(GmailIngestorError, match="Failed to list messages"):
             list(client.discover_message_ids("INBOX"))
 
     def test_passes_query_parameter(self, client: GmailClient, mock_service: MagicMock) -> None:
@@ -243,7 +243,7 @@ class TestFetchMessagesBatch:
     def test_raises_gmail_error_on_batch_execute_failure(
         self, client: GmailClient, mock_service: MagicMock
     ) -> None:
-        """fetch_messages_batch() raises GmailIngesterError when batch.execute() throws."""
+        """fetch_messages_batch() raises GmailIngestorError when batch.execute() throws."""
 
         def fake_new_batch(callback: Any) -> MagicMock:
             batch = MagicMock()
@@ -252,7 +252,7 @@ class TestFetchMessagesBatch:
 
         mock_service.new_batch_http_request.side_effect = fake_new_batch
 
-        with pytest.raises(GmailIngesterError, match="Batch request failed"):
+        with pytest.raises(GmailIngestorError, match="Batch request failed"):
             client.fetch_messages_batch(["msg1"])
 
     def test_returns_empty_list_for_empty_input(

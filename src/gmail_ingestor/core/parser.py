@@ -8,8 +8,8 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from gmail_ingester.core.exceptions import ParseError
-from gmail_ingester.core.models import EmailBody, EmailHeader, EmailMessage
+from gmail_ingestor.core.exceptions import ParseError
+from gmail_ingestor.core.models import EmailBody, EmailHeader, EmailMessage
 
 logger = logging.getLogger(__name__)
 

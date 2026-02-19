@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from gmail_ingester.core.models import EmailBody
+from gmail_ingestor.core.models import EmailBody
 
 logger = logging.getLogger(__name__)
 

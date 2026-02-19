@@ -1,4 +1,4 @@
-"""Integration tests for EmailIngester with mocked dependencies."""
+"""Integration tests for EmailIngestor with mocked dependencies."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gmail_ingester.config.settings import GmailIngesterSettings
-from gmail_ingester.core.exceptions import ConversionError
-from gmail_ingester.core.models import (
+from gmail_ingestor.config.settings import GmailIngestorSettings
+from gmail_ingestor.core.exceptions import ConversionError
+from gmail_ingestor.core.models import (
     ConvertedEmail,
     EmailBody,
     EmailHeader,
@@ -19,13 +19,13 @@ from gmail_ingester.core.models import (
     FetchProgress,
     MessageStub,
 )
-from gmail_ingester.pipeline.ingester import EmailIngester
+from gmail_ingestor.pipeline.ingestor import EmailIngestor
 
 
 @pytest.fixture
-def tmp_settings(tmp_path: Path) -> GmailIngesterSettings:
+def tmp_settings(tmp_path: Path) -> GmailIngestorSettings:
     """Settings pointing to temporary directories."""
-    return GmailIngesterSettings(
+    return GmailIngestorSettings(
         credentials_path=tmp_path / "creds" / "client_secret.json",
         token_path=tmp_path / "creds" / "token.json",
         database_path=tmp_path / "data" / "test.db",
@@ -75,8 +75,8 @@ def mock_writer() -> MagicMock:
     return MagicMock()
 
 
-def _build_ingester(
-    settings: GmailIngesterSettings,
+def _build_ingestor(
+    settings: GmailIngestorSettings,
     gmail_client: MagicMock,
     parser: MagicMock,
     converter: MagicMock,
@@ -84,41 +84,41 @@ def _build_ingester(
     raw_store: MagicMock,
     writer: MagicMock,
     on_progress: Any = None,
-) -> EmailIngester:
-    """Build an EmailIngester with all internal components replaced by mocks.
+) -> EmailIngestor:
+    """Build an EmailIngestor with all internal components replaced by mocks.
 
     We patch authenticate/build_gmail_service so _ensure_initialized() doesn't
     attempt real OAuth, then override the lazy-init components directly.
     """
     with (
-        patch("gmail_ingester.pipeline.ingester.authenticate") as mock_auth,
-        patch("gmail_ingester.pipeline.ingester.build_gmail_service") as mock_build,
+        patch("gmail_ingestor.pipeline.ingestor.authenticate") as mock_auth,
+        patch("gmail_ingestor.pipeline.ingestor.build_gmail_service") as mock_build,
     ):
         mock_auth.return_value = MagicMock()
         mock_build.return_value = MagicMock()
 
-        ingester = EmailIngester(settings=settings, on_progress=on_progress)
+        ingestor = EmailIngestor(settings=settings, on_progress=on_progress)
 
         # Replace lazy components with mocks
-        ingester._client = gmail_client
-        ingester._parser = parser
-        ingester._converter = converter
-        ingester._tracker = tracker
-        ingester._raw_store = raw_store
-        ingester._writer = writer
+        ingestor._client = gmail_client
+        ingestor._parser = parser
+        ingestor._converter = converter
+        ingestor._tracker = tracker
+        ingestor._raw_store = raw_store
+        ingestor._writer = writer
 
-    return ingester
+    return ingestor
 
 
 # ---------- run_discovery ----------
 
 
 class TestRunDiscovery:
-    """Tests for EmailIngester.run_discovery()."""
+    """Tests for EmailIngestor.run_discovery()."""
 
     def test_inserts_pending_messages_from_paginated_discovery(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -137,7 +137,7 @@ class TestRunDiscovery:
         mock_gmail_client.discover_message_ids.return_value = iter([page1, page2])
         mock_tracker.bulk_insert_pending.side_effect = [2, 1]
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -147,17 +147,17 @@ class TestRunDiscovery:
             mock_writer,
         )
 
-        total_new = ingester.run_discovery("INBOX")
+        total_new = ingestor.run_discovery("INBOX")
 
         assert total_new == 3
         assert mock_tracker.bulk_insert_pending.call_count == 2
         mock_tracker.bulk_insert_pending.assert_any_call([("msg1", "t1"), ("msg2", "t2")], "INBOX")
         mock_tracker.bulk_insert_pending.assert_any_call([("msg3", "t3")], "INBOX")
-        assert ingester._progress.ids_discovered == 3
+        assert ingestor._progress.ids_discovered == 3
 
     def test_returns_zero_when_no_messages_discovered(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -168,7 +168,7 @@ class TestRunDiscovery:
         """run_discovery() returns 0 when no pages are yielded."""
         mock_gmail_client.discover_message_ids.return_value = iter([])
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -178,7 +178,7 @@ class TestRunDiscovery:
             mock_writer,
         )
 
-        total_new = ingester.run_discovery("INBOX")
+        total_new = ingestor.run_discovery("INBOX")
 
         assert total_new == 0
         mock_tracker.bulk_insert_pending.assert_not_called()
@@ -188,11 +188,11 @@ class TestRunDiscovery:
 
 
 class TestRunFetchPending:
-    """Tests for EmailIngester.run_fetch_pending()."""
+    """Tests for EmailIngestor.run_fetch_pending()."""
 
     def test_fetches_parses_stores_and_marks_fetched(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -226,7 +226,7 @@ class TestRunFetchPending:
         # unmatched pending IDs)
         mock_tracker.get_message.return_value = None
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -236,7 +236,7 @@ class TestRunFetchPending:
             mock_writer,
         )
 
-        total = ingester.run_fetch_pending()
+        total = ingestor.run_fetch_pending()
 
         assert total == 2
         assert mock_parser.parse.call_count == 2
@@ -246,11 +246,11 @@ class TestRunFetchPending:
             c for c in mock_tracker.update_status.call_args_list if c[0][1] == "fetched"
         ]
         assert len(fetched_calls) == 2
-        assert ingester._progress.messages_fetched == 2
+        assert ingestor._progress.messages_fetched == 2
 
     def test_failed_messages_tracked_with_error(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -267,7 +267,7 @@ class TestRunFetchPending:
         mock_parser.parse.side_effect = Exception("MIME decode error")
         mock_tracker.get_message.return_value = None
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -277,25 +277,25 @@ class TestRunFetchPending:
             mock_writer,
         )
 
-        total = ingester.run_fetch_pending()
+        total = ingestor.run_fetch_pending()
 
         assert total == 0
         # Message should be marked as failed
         failed_calls = [c for c in mock_tracker.update_status.call_args_list if c[0][1] == "failed"]
         assert len(failed_calls) >= 1
         assert "MIME decode error" in str(failed_calls[0])
-        assert ingester._progress.messages_failed >= 1
+        assert ingestor._progress.messages_failed >= 1
 
 
 # ---------- run_convert_pending ----------
 
 
 class TestRunConvertPending:
-    """Tests for EmailIngester.run_convert_pending()."""
+    """Tests for EmailIngestor.run_convert_pending()."""
 
     def test_converts_fetched_to_markdown_and_writes_files(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -336,7 +336,7 @@ class TestRunConvertPending:
         mock_converter.convert.return_value = converted
         mock_writer.write.return_value = tmp_path / "output" / "2024-06-15_test_msg1.md"
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -346,7 +346,7 @@ class TestRunConvertPending:
             mock_writer,
         )
 
-        total = ingester.run_convert_pending()
+        total = ingestor.run_convert_pending()
 
         assert total == 1
         mock_converter.convert.assert_called_once()
@@ -356,11 +356,11 @@ class TestRunConvertPending:
             c for c in mock_tracker.update_status.call_args_list if c[0][1] == "converted"
         ]
         assert len(converted_calls) == 1
-        assert ingester._progress.messages_converted == 1
+        assert ingestor._progress.messages_converted == 1
 
     def test_conversion_failure_marks_message_as_failed(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -388,7 +388,7 @@ class TestRunConvertPending:
 
         mock_converter.convert.side_effect = ConversionError("No convertible content")
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -398,13 +398,13 @@ class TestRunConvertPending:
             mock_writer,
         )
 
-        total = ingester.run_convert_pending()
+        total = ingestor.run_convert_pending()
 
         assert total == 0
         failed_calls = [c for c in mock_tracker.update_status.call_args_list if c[0][1] == "failed"]
         assert len(failed_calls) == 1
         assert "No convertible content" in str(failed_calls[0])
-        assert ingester._progress.messages_failed == 1
+        assert ingestor._progress.messages_failed == 1
 
 
 # ---------- Progress callback ----------
@@ -415,7 +415,7 @@ class TestProgressCallback:
 
     def test_progress_callback_is_called_during_discovery(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -443,7 +443,7 @@ class TestProgressCallback:
         mock_gmail_client.discover_message_ids.return_value = iter([page1])
         mock_tracker.bulk_insert_pending.return_value = 1
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -454,7 +454,7 @@ class TestProgressCallback:
             on_progress=capture_progress,
         )
 
-        ingester.run_discovery("INBOX")
+        ingestor.run_discovery("INBOX")
 
         # At least one progress update should have been fired
         assert len(progress_updates) >= 1
@@ -466,7 +466,7 @@ class TestProgressCallback:
 
     def test_progress_callback_is_called_during_fetch(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -507,7 +507,7 @@ class TestProgressCallback:
         mock_raw_store.store.return_value = {}
         mock_tracker.get_message.return_value = None
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings,
             mock_gmail_client,
             mock_parser,
@@ -518,7 +518,7 @@ class TestProgressCallback:
             on_progress=capture_progress,
         )
 
-        ingester.run_fetch_pending()
+        ingestor.run_fetch_pending()
 
         fetch_updates = [
             p for p in progress_updates if p.current_stage == "fetch"
@@ -535,7 +535,7 @@ class TestDiscoveryPagination:
 
     def test_discovery_with_limit(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -550,12 +550,12 @@ class TestDiscoveryPagination:
         mock_gmail_client.discover_message_ids.return_value = iter([page1, page2, page3])
         mock_tracker.bulk_insert_pending.return_value = 0
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        ingester.run_discovery("INBOX", limit=15)
+        ingestor.run_discovery("INBOX", limit=15)
 
         # Should have inserted 10 from page1 + 5 from page2
         calls = mock_tracker.bulk_insert_pending.call_args_list
@@ -565,7 +565,7 @@ class TestDiscoveryPagination:
 
     def test_discovery_with_offset(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -578,12 +578,12 @@ class TestDiscoveryPagination:
         mock_gmail_client.discover_message_ids.return_value = iter([page])
         mock_tracker.bulk_insert_pending.return_value = 7
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        total = ingester.run_discovery("INBOX", offset=3)
+        total = ingestor.run_discovery("INBOX", offset=3)
 
         assert total == 7
         calls = mock_tracker.bulk_insert_pending.call_args_list
@@ -595,7 +595,7 @@ class TestDiscoveryPagination:
 
     def test_discovery_with_limit_and_offset(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -609,12 +609,12 @@ class TestDiscoveryPagination:
         mock_gmail_client.discover_message_ids.return_value = iter([page1, page2])
         mock_tracker.bulk_insert_pending.return_value = 0
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        ingester.run_discovery("INBOX", offset=5, limit=10)
+        ingestor.run_discovery("INBOX", offset=5, limit=10)
 
         calls = mock_tracker.bulk_insert_pending.call_args_list
         total_stubs = sum(len(c[0][0]) for c in calls)
@@ -635,7 +635,7 @@ class TestFetchPendingPagination:
 
     def test_fetch_pending_with_limit(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -664,17 +664,17 @@ class TestFetchPendingPagination:
         mock_raw_store.store.return_value = {}
         mock_tracker.get_message.return_value = None
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        total = ingester.run_fetch_pending(limit=3)
+        total = ingestor.run_fetch_pending(limit=3)
         assert total == 3
 
     def test_fetch_pending_with_offset(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -685,12 +685,12 @@ class TestFetchPendingPagination:
         """run_fetch_pending(offset=5) passes offset to get_pending_ids."""
         mock_tracker.get_pending_ids.return_value = []
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        ingester.run_fetch_pending(offset=5)
+        ingestor.run_fetch_pending(offset=5)
 
         mock_tracker.get_pending_ids.assert_called_with(
             limit=tmp_settings.batch_size, offset=5,
@@ -698,7 +698,7 @@ class TestFetchPendingPagination:
 
     def test_fetch_pending_with_custom_batch_size(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -709,12 +709,12 @@ class TestFetchPendingPagination:
         """run_fetch_pending(batch_size=10) uses overridden batch size."""
         mock_tracker.get_pending_ids.return_value = []
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        ingester.run_fetch_pending(batch_size=10)
+        ingestor.run_fetch_pending(batch_size=10)
 
         mock_tracker.get_pending_ids.assert_called_with(limit=10, offset=0)
 
@@ -727,7 +727,7 @@ class TestConvertPendingPagination:
 
     def test_convert_pending_with_limit(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -764,12 +764,12 @@ class TestConvertPendingPagination:
         mock_converter.convert.return_value = converted
         mock_writer.write.return_value = tmp_path / "output" / "test.md"
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        total = ingester.run_convert_pending(limit=1)
+        total = ingestor.run_convert_pending(limit=1)
         assert total == 1
 
 
@@ -781,7 +781,7 @@ class TestRunPipelinePagination:
 
     def test_run_full_pipeline_limit_caps_discovery(
         self,
-        tmp_settings: GmailIngesterSettings,
+        tmp_settings: GmailIngestorSettings,
         mock_gmail_client: MagicMock,
         mock_parser: MagicMock,
         mock_converter: MagicMock,
@@ -796,12 +796,12 @@ class TestRunPipelinePagination:
         mock_tracker.get_pending_ids.return_value = []
         mock_tracker.get_fetched_ids.return_value = []
 
-        ingester = _build_ingester(
+        ingestor = _build_ingestor(
             tmp_settings, mock_gmail_client, mock_parser, mock_converter,
             mock_tracker, mock_raw_store, mock_writer,
         )
 
-        ingester.run(label_id="INBOX", limit=10, batch_size=25)
+        ingestor.run(label_id="INBOX", limit=10, batch_size=25)
 
         # Discovery should have been called with limit
         calls = mock_tracker.bulk_insert_pending.call_args_list

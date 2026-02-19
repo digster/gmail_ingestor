@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import Resource, build
 
-from gmail_ingester.core.exceptions import AuthenticationError
+from gmail_ingestor.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 

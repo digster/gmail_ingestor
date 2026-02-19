@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from gmail_ingester.storage.tracker import FetchTracker
+from gmail_ingestor.storage.tracker import FetchTracker
 
 
 class TestConnect:

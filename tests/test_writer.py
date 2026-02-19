@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from gmail_ingester.core.models import ConvertedEmail, EmailHeader
-from gmail_ingester.storage.writer import MarkdownWriter
+from gmail_ingestor.core.models import ConvertedEmail, EmailHeader
+from gmail_ingestor.storage.writer import MarkdownWriter
 
 
 @pytest.fixture

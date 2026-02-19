@@ -6,8 +6,8 @@ import logging
 
 import trafilatura
 
-from gmail_ingester.core.exceptions import ConversionError
-from gmail_ingester.core.models import ConvertedEmail, EmailBody, EmailHeader
+from gmail_ingestor.core.exceptions import ConversionError
+from gmail_ingestor.core.models import ConvertedEmail, EmailBody, EmailHeader
 
 logger = logging.getLogger(__name__)
 

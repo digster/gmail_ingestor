@@ -1,8 +1,8 @@
-# Gmail Ingester — Architecture
+# Gmail Ingestor — Architecture
 
 ## Overview
 
-Gmail Ingester is a Python library that fetches emails from Gmail by label and converts their HTML/text bodies to markdown using trafilatura. It is designed as a **core library** for future TUI/GUI layers, with clean API boundaries and zero UI dependencies.
+Gmail Ingestor is a Python library that fetches emails from Gmail by label and converts their HTML/text bodies to markdown using trafilatura. It is designed as a **core library** for future TUI/GUI layers, with clean API boundaries and zero UI dependencies.
 
 ## System Architecture
 
@@ -12,8 +12,8 @@ Gmail Ingester is a Python library that fetches emails from Gmail by label and c
 │                      (scripts/cli.py)                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                      Pipeline Layer                              │
-│                  (pipeline/ingester.py)                           │
-│         EmailIngester: orchestrates 3-stage pipeline             │
+│                  (pipeline/ingestor.py)                           │
+│         EmailIngestor: orchestrates 3-stage pipeline             │
 │         FetchProgress + on_progress callback for UIs             │
 ├──────────────┬──────────────┬──────────────┬─────────────────────┤
 │  Core Layer  │              │              │   Storage Layer     │
@@ -27,13 +27,13 @@ Gmail Ingester is a Python library that fetches emails from Gmail by label and c
 ├──────────────┴──────────────┴──────────────┴─────────────────────┤
 │                      Config Layer                                │
 │              (config/settings.py)                                 │
-│         GmailIngesterSettings via pydantic-settings              │
+│         GmailIngestorSettings via pydantic-settings              │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ## Three-Stage Pipeline
 
-The `EmailIngester.run()` processes emails in mini-batches for bounded memory:
+The `EmailIngestor.run()` processes emails in mini-batches for bounded memory:
 
 ```
 Stage 1 - Discovery   │ Paginate message IDs → filter already-tracked → insert as 'pending'
@@ -69,10 +69,10 @@ The `fetch_runs` table provides audit history of each ingestion run.
 ## Directory Layout
 
 ```
-src/gmail_ingester/
+src/gmail_ingestor/
 ├── core/               # Domain logic, zero UI deps
 │   ├── models.py       # Frozen dataclasses (MessageStub, EmailHeader, EmailBody, EmailMessage, ConvertedEmail, FetchProgress)
-│   ├── exceptions.py   # Exception hierarchy (GmailIngesterError → Auth/RateLimit/Parse/Conversion)
+│   ├── exceptions.py   # Exception hierarchy (GmailIngestorError → Auth/RateLimit/Parse/Conversion)
 │   ├── auth.py         # OAuth 2.0 with token caching, SCOPES = gmail.readonly
 │   ├── gmail_client.py # GmailClient: list_labels, discover_message_ids (generator), fetch_messages_batch
 │   ├── parser.py       # GmailParser: recursive MIME walk, base64url decode, header extraction
@@ -82,9 +82,9 @@ src/gmail_ingester/
 │   ├── raw_store.py    # RawEmailStore: saves original text/html to output/raw/
 │   └── writer.py       # MarkdownWriter: {date}_{slug}_{id}.md naming, Unicode-safe slugify
 ├── pipeline/
-│   └── ingester.py     # EmailIngester: 3-stage orchestrator with progress callbacks
+│   └── ingestor.py     # EmailIngestor: 3-stage orchestrator with progress callbacks
 └── config/
-    └── settings.py     # GmailIngesterSettings via pydantic-settings (GMAIL_ env prefix)
+    └── settings.py     # GmailIngestorSettings via pydantic-settings (GMAIL_ env prefix)
 ```
 
 ## Design Decisions

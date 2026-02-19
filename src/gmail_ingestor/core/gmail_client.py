@@ -9,8 +9,8 @@ from typing import Any
 from googleapiclient.discovery import Resource
 from googleapiclient.http import BatchHttpRequest
 
-from gmail_ingester.core.exceptions import GmailIngesterError, RateLimitError
-from gmail_ingester.core.models import MessageStub
+from gmail_ingestor.core.exceptions import GmailIngestorError, RateLimitError
+from gmail_ingestor.core.models import MessageStub
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class GmailClient:
             labels = results.get("labels", [])
             return [{"id": lbl["id"], "name": lbl["name"]} for lbl in labels]
         except Exception as e:
-            raise GmailIngesterError(f"Failed to list labels: {e}") from e
+            raise GmailIngestorError(f"Failed to list labels: {e}") from e
 
     def discover_message_ids(
         self,
@@ -72,7 +72,7 @@ class GmailClient:
                 error_str = str(e)
                 if "429" in error_str or "rateLimitExceeded" in error_str:
                     raise RateLimitError(f"Rate limited during discovery: {e}") from e
-                raise GmailIngesterError(f"Failed to list messages: {e}") from e
+                raise GmailIngestorError(f"Failed to list messages: {e}") from e
 
             messages = response.get("messages", [])
             if not messages:
@@ -131,7 +131,7 @@ class GmailClient:
         try:
             batch.execute()
         except Exception as e:
-            raise GmailIngesterError(f"Batch request failed: {e}") from e
+            raise GmailIngestorError(f"Batch request failed: {e}") from e
 
         if errors:
             rate_limit_errors = [e for e in errors if "Rate limited" in e]

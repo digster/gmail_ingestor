@@ -1,4 +1,4 @@
-"""Shared fixtures for Gmail Ingester tests."""
+"""Shared fixtures for Gmail Ingestor tests."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from gmail_ingester.core.models import EmailBody, EmailHeader, EmailMessage
+from gmail_ingestor.core.models import EmailBody, EmailHeader, EmailMessage
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

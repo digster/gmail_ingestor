@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gmail_ingester.core.models import EmailBody
-from gmail_ingester.storage.raw_store import RawEmailStore
+from gmail_ingestor.core.models import EmailBody
+from gmail_ingestor.storage.raw_store import RawEmailStore
 
 
 class TestStoreTextAndHtml:

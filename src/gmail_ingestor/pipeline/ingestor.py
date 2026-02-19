@@ -8,21 +8,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from gmail_ingester.config.settings import GmailIngesterSettings
-from gmail_ingester.core.auth import authenticate, build_gmail_service
-from gmail_ingester.core.converter import MarkdownConverter
-from gmail_ingester.core.exceptions import ConversionError, GmailIngesterError
-from gmail_ingester.core.gmail_client import GmailClient
-from gmail_ingester.core.models import EmailBody, EmailHeader, FetchProgress
-from gmail_ingester.core.parser import GmailParser
-from gmail_ingester.storage.raw_store import RawEmailStore
-from gmail_ingester.storage.tracker import FetchTracker
-from gmail_ingester.storage.writer import MarkdownWriter
+from gmail_ingestor.config.settings import GmailIngestorSettings
+from gmail_ingestor.core.auth import authenticate, build_gmail_service
+from gmail_ingestor.core.converter import MarkdownConverter
+from gmail_ingestor.core.exceptions import ConversionError, GmailIngestorError
+from gmail_ingestor.core.gmail_client import GmailClient
+from gmail_ingestor.core.models import EmailBody, EmailHeader, FetchProgress
+from gmail_ingestor.core.parser import GmailParser
+from gmail_ingestor.storage.raw_store import RawEmailStore
+from gmail_ingestor.storage.tracker import FetchTracker
+from gmail_ingestor.storage.writer import MarkdownWriter
 
 logger = logging.getLogger(__name__)
 
 
-class EmailIngester:
+class EmailIngestor:
     """Orchestrates the three-stage email ingestion pipeline.
 
     Stage 1 - Discovery: Paginate message IDs → filter already-tracked → insert as 'pending'
@@ -32,10 +32,10 @@ class EmailIngester:
 
     def __init__(
         self,
-        settings: GmailIngesterSettings | None = None,
+        settings: GmailIngestorSettings | None = None,
         on_progress: Callable[[FetchProgress], None] | None = None,
     ) -> None:
-        self._settings = settings or GmailIngesterSettings()
+        self._settings = settings or GmailIngestorSettings()
         self._on_progress = on_progress
         self._progress = FetchProgress()
 
@@ -221,7 +221,7 @@ class EmailIngester:
 
             try:
                 raw_messages = client.fetch_messages_batch(pending_ids)
-            except GmailIngesterError as e:
+            except GmailIngestorError as e:
                 logger.error("Batch fetch failed: %s", e)
                 break
 

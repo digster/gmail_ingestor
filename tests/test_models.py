@@ -1,4 +1,4 @@
-"""Unit tests for gmail_ingester.core.models dataclasses."""
+"""Unit tests for gmail_ingestor.core.models dataclasses."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from gmail_ingester.core.models import (
+from gmail_ingestor.core.models import (
     ConvertedEmail,
     EmailBody,
     EmailHeader,

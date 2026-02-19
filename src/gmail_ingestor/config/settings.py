@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class GmailIngesterSettings(BaseSettings):
+class GmailIngestorSettings(BaseSettings):
     """Application settings loaded from environment variables and .env file."""
 
     model_config = SettingsConfigDict(
@@ -31,7 +31,7 @@ class GmailIngesterSettings(BaseSettings):
     output_raw_dir: Path = Path("output/raw")
 
     # Database
-    database_path: Path = Path("data/gmail_ingester.db")
+    database_path: Path = Path("data/gmail_ingestor.db")
 
     # Logging
     log_level: str = "INFO"

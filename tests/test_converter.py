@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from gmail_ingester.core.converter import MarkdownConverter
-from gmail_ingester.core.exceptions import ConversionError
-from gmail_ingester.core.models import ConvertedEmail, EmailBody, EmailHeader
+from gmail_ingestor.core.converter import MarkdownConverter
+from gmail_ingestor.core.exceptions import ConversionError
+from gmail_ingestor.core.models import ConvertedEmail, EmailBody, EmailHeader
 
 MESSAGE_ID = "msg_test_001"
 
@@ -22,7 +22,7 @@ class TestConvertBodyHtml:
     ) -> None:
         """Trafilatura extracts text from HTML body."""
         converter = MarkdownConverter()
-        with patch("gmail_ingester.core.converter.trafilatura") as mock_traf:
+        with patch("gmail_ingestor.core.converter.trafilatura") as mock_traf:
             mock_traf.extract.return_value = "Hello, this is **HTML**."
             result = converter.convert(MESSAGE_ID, sample_header, sample_body_html)
 
@@ -44,7 +44,7 @@ class TestConvertBodyHtml:
             html="<html><body><p>Content</p></body></html>",
         )
         converter = MarkdownConverter()
-        with patch("gmail_ingester.core.converter.trafilatura") as mock_traf:
+        with patch("gmail_ingestor.core.converter.trafilatura") as mock_traf:
             mock_traf.extract.return_value = "Content"
             converter.convert(MESSAGE_ID, sample_header, body)
 
@@ -65,7 +65,7 @@ class TestFallbackToPlainText:
     ) -> None:
         """When trafilatura returns None the converter uses plain_text."""
         converter = MarkdownConverter()
-        with patch("gmail_ingester.core.converter.trafilatura") as mock_traf:
+        with patch("gmail_ingestor.core.converter.trafilatura") as mock_traf:
             mock_traf.extract.return_value = None
             result = converter.convert(MESSAGE_ID, sample_header, sample_body_html)
 
@@ -77,7 +77,7 @@ class TestFallbackToPlainText:
     ) -> None:
         """When trafilatura raises an exception the converter uses plain_text."""
         converter = MarkdownConverter()
-        with patch("gmail_ingester.core.converter.trafilatura") as mock_traf:
+        with patch("gmail_ingestor.core.converter.trafilatura") as mock_traf:
             mock_traf.extract.side_effect = RuntimeError("parse error")
             result = converter.convert(MESSAGE_ID, sample_header, sample_body_html)
 
@@ -109,7 +109,7 @@ class TestConversionError:
         """ConversionError raised when trafilatura returns None and no plain_text."""
         body = EmailBody(plain_text=None, html="<html><body>Hi</body></html>")
         converter = MarkdownConverter()
-        with patch("gmail_ingester.core.converter.trafilatura") as mock_traf:
+        with patch("gmail_ingestor.core.converter.trafilatura") as mock_traf:
             mock_traf.extract.return_value = None
             with pytest.raises(ConversionError, match=MESSAGE_ID):
                 converter.convert(MESSAGE_ID, sample_header, body)

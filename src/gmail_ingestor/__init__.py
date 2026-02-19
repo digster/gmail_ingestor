@@ -1,6 +1,6 @@
-"""Gmail Ingester - Fetch Gmail emails by label and convert to markdown."""
+"""Gmail Ingestor - Fetch Gmail emails by label and convert to markdown."""
 
-from gmail_ingester.core.models import (
+from gmail_ingestor.core.models import (
     ConvertedEmail,
     EmailBody,
     EmailHeader,
@@ -8,13 +8,13 @@ from gmail_ingester.core.models import (
     FetchProgress,
     MessageStub,
 )
-from gmail_ingester.pipeline.ingester import EmailIngester
+from gmail_ingestor.pipeline.ingestor import EmailIngestor
 
 __all__ = [
     "ConvertedEmail",
     "EmailBody",
     "EmailHeader",
-    "EmailIngester",
+    "EmailIngestor",
     "EmailMessage",
     "FetchProgress",
     "MessageStub",

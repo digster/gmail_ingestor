@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from gmail_ingester.core.exceptions import ParseError
-from gmail_ingester.core.parser import GmailParser
+from gmail_ingestor.core.exceptions import ParseError
+from gmail_ingestor.core.parser import GmailParser
 
 
 @pytest.fixture

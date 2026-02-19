@@ -1,5 +1,5 @@
 [project]
-name = "gmail-ingester"
+name = "gmail-ingestor"
 version = "0.1.0"
 description = "Fetch Gmail emails by label and convert HTML/text bodies to markdown"
 readme = "README.md"
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gmail-ingester = "gmail_ingester.cli:main"
+gmail-ingestor = "gmail_ingestor.cli:main"
 
 [build-system]
 requires = ["hatchling"]

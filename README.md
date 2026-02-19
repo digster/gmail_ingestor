@@ -1,4 +1,4 @@
-# Gmail Ingester
+# Gmail Ingestor
 
 Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown. Built as a core library for future TUI/GUI layers.
 
@@ -25,7 +25,7 @@ Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown
 
 ```bash
 # Clone and install
-cd gmail-ingester
+cd gmail-ingestor
 uv sync --dev
 ```
 
@@ -87,31 +87,31 @@ uv run python scripts/cli.py retry
 ### Library API
 
 ```python
-from gmail_ingester import EmailIngester, FetchProgress
-from gmail_ingester.config.settings import GmailIngesterSettings
+from gmail_ingestor import EmailIngestor, FetchProgress
+from gmail_ingestor.config.settings import GmailIngestorSettings
 
-settings = GmailIngesterSettings()
+settings = GmailIngestorSettings()
 
 def on_progress(progress: FetchProgress):
     print(f"Stage: {progress.current_stage}, Fetched: {progress.messages_fetched}")
 
-ingester = EmailIngester(settings=settings, on_progress=on_progress)
+ingestor = EmailIngestor(settings=settings, on_progress=on_progress)
 
 # List labels
-labels = ingester.list_labels()
+labels = ingestor.list_labels()
 
 # Run full pipeline
-progress = ingester.run(label_id="INBOX")
+progress = ingestor.run(label_id="INBOX")
 
 # Run with pagination controls
-progress = ingester.run(label_id="INBOX", limit=20, offset=50, batch_size=25)
+progress = ingestor.run(label_id="INBOX", limit=20, offset=50, batch_size=25)
 
 # Or run stages independently
-ingester.run_discovery(label_id="INBOX", limit=10, offset=5)
-ingester.run_fetch_pending(limit=5, batch_size=10)
-ingester.run_convert_pending(limit=5, batch_size=10)
+ingestor.run_discovery(label_id="INBOX", limit=10, offset=5)
+ingestor.run_fetch_pending(limit=5, batch_size=10)
+ingestor.run_convert_pending(limit=5, batch_size=10)
 
-ingester.close()
+ingestor.close()
 ```
 
 ## Output
@@ -143,7 +143,7 @@ Raw email content (original text/HTML) is preserved in `output/raw/`.
 uv run pytest tests/ -v
 
 # Run tests with coverage
-uv run pytest tests/ --cov=gmail_ingester --cov-report=term-missing
+uv run pytest tests/ --cov=gmail_ingestor --cov-report=term-missing
 
 # Lint
 uv run ruff check src/ tests/

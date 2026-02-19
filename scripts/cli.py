@@ -1,4 +1,4 @@
-"""Minimal CLI entry point for manual testing of the Gmail Ingester."""
+"""Minimal CLI entry point for manual testing of the Gmail Ingestor."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import argparse
 import logging
 import sys
 
-from gmail_ingester.config.settings import GmailIngesterSettings
-from gmail_ingester.core.models import FetchProgress
-from gmail_ingester.pipeline.ingester import EmailIngester
+from gmail_ingestor.config.settings import GmailIngestorSettings
+from gmail_ingestor.core.models import FetchProgress
+from gmail_ingestor.pipeline.ingestor import EmailIngestor
 
 
 def setup_logging(level: str) -> None:
@@ -72,7 +72,7 @@ def _validate_pagination_args(args: argparse.Namespace) -> None:
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Gmail Ingester - Fetch emails and convert to markdown"
+        description="Gmail Ingestor - Fetch emails and convert to markdown"
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -120,14 +120,14 @@ def main() -> None:
     if args.command in ("fetch", "discover", "fetch-pending", "convert-pending"):
         _validate_pagination_args(args)
 
-    settings = GmailIngesterSettings()
+    settings = GmailIngestorSettings()
     setup_logging(settings.log_level)
 
-    ingester = EmailIngester(settings=settings, on_progress=on_progress)
+    ingestor = EmailIngestor(settings=settings, on_progress=on_progress)
 
     try:
         if args.command == "list-labels":
-            labels = ingester.list_labels()
+            labels = ingestor.list_labels()
             print(f"\nFound {len(labels)} labels:\n")
             for label in sorted(labels, key=lambda x: x["name"]):
                 print(f"  {label['id']:40s} {label['name']}")
@@ -135,7 +135,7 @@ def main() -> None:
         elif args.command == "fetch":
             label = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            progress = ingester.run(
+            progress = ingestor.run(
                 label_id=label,
                 query=query,
                 limit=args.limit,
@@ -145,19 +145,19 @@ def main() -> None:
             print(f"\n\nComplete: {progress}")
 
         elif args.command == "status":
-            counts = ingester.get_status()
+            counts = ingestor.get_status()
             print("\nMessage counts by status:")
             for status, count in sorted(counts.items()):
                 print(f"  {status}: {count}")
 
         elif args.command == "retry":
-            count = ingester.retry_failed()
+            count = ingestor.retry_failed()
             print(f"\nReset {count} failed messages to pending")
 
         elif args.command == "discover":
             label = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            count = ingester.run_discovery(
+            count = ingestor.run_discovery(
                 label_id=label,
                 query=query,
                 limit=args.limit,
@@ -166,7 +166,7 @@ def main() -> None:
             print(f"\n\nDiscovered {count} new message IDs")
 
         elif args.command == "fetch-pending":
-            count = ingester.run_fetch_pending(
+            count = ingestor.run_fetch_pending(
                 limit=args.limit,
                 offset=args.offset,
                 batch_size=args.batch_size,
@@ -174,7 +174,7 @@ def main() -> None:
             print(f"\n\nFetched {count} messages")
 
         elif args.command == "convert-pending":
-            count = ingester.run_convert_pending(
+            count = ingestor.run_convert_pending(
                 limit=args.limit,
                 offset=args.offset,
                 batch_size=args.batch_size,
@@ -188,7 +188,7 @@ def main() -> None:
         print(f"\nError: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        ingester.close()
+        ingestor.close()
 
 
 if __name__ == "__main__":
