@@ -47,6 +47,14 @@ class EmailIngestor:
         self._raw_store: RawEmailStore | None = None
         self._writer: MarkdownWriter | None = None
 
+    @property
+    def on_progress(self) -> Callable[[FetchProgress], None] | None:
+        return self._on_progress
+
+    @on_progress.setter
+    def on_progress(self, callback: Callable[[FetchProgress], None] | None) -> None:
+        self._on_progress = callback
+
     def _ensure_initialized(
         self,
     ) -> tuple[GmailClient, FetchTracker, RawEmailStore, MarkdownWriter]:

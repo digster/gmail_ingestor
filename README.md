@@ -52,6 +52,10 @@ Key settings (all prefixed with `GMAIL_`):
 | `GMAIL_LABEL` | `INBOX` | Label to fetch |
 | `GMAIL_BATCH_SIZE` | `50` | Messages per batch |
 | `GMAIL_MAX_RESULTS_PER_PAGE` | `100` | IDs per discovery page |
+| `GMAIL_OUTPUT_MARKDOWN_DIR` | `output/markdown` | Markdown output directory |
+| `GMAIL_OUTPUT_RAW_DIR` | `output/raw` | Raw email output directory |
+| `GMAIL_DATABASE_PATH` | `data/gmail_ingestor.db` | SQLite database path |
+| `GMAIL_LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, etc.) |
 
 ## Usage
 

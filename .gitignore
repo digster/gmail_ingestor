@@ -28,7 +28,7 @@ output/markdown/*
 !output/markdown/.gitkeep
 output/raw/*
 !output/raw/.gitkeep
-data/*.db
+data/*.db*
 data/*.sqlite
 !data/.gitkeep
 

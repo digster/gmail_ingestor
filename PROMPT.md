@@ -11,3 +11,7 @@ Write three test files for the storage layer of gmail-ingestor (test_tracker.py,
 ## 2026-02-17 (session 2)
 
 Add CLI pagination flags (--limit, --offset, --batch-size) to the gmail-ingestor pipeline. Add offset param to tracker.get_pending_ids()/get_fetched_ids(), add limit/offset/batch_size params to ingestor run_discovery/run_fetch_pending/run_convert_pending/run, wire _add_pagination_args helper to fetch/discover/fetch-pending/convert-pending CLI subparsers with input validation, add tests for tracker offset, ingestor pagination, and CLI argument parsing.
+
+## 2026-02-23
+
+Fix `.env` output directory settings not respected. The `env_prefix="GMAIL_"` in pydantic-settings means all fields expect `GMAIL_`-prefixed env vars, but `.env` defined `OUTPUT_MARKDOWN_DIR`, `OUTPUT_RAW_DIR`, `DATABASE_PATH`, and `LOG_LEVEL` without the prefix — causing them to be silently ignored. Renamed these vars in `.env` and `.env.example` to include the `GMAIL_` prefix, and updated README with the missing env var documentation.
