@@ -15,3 +15,5 @@ Add CLI pagination flags (--limit, --offset, --batch-size) to the gmail-ingestor
 ## 2026-02-23
 
 Fix `.env` output directory settings not respected. The `env_prefix="GMAIL_"` in pydantic-settings means all fields expect `GMAIL_`-prefixed env vars, but `.env` defined `OUTPUT_MARKDOWN_DIR`, `OUTPUT_RAW_DIR`, `DATABASE_PATH`, and `LOG_LEVEL` without the prefix — causing them to be silently ignored. Renamed these vars in `.env` and `.env.example` to include the `GMAIL_` prefix, and updated README with the missing env var documentation.
+
+Create SKILL.md — a concise, action-oriented quick-reference guide covering one-liner description, prerequisites, quick setup, CLI reference with all commands/flags, Python API with public exports, 3-stage pipeline architecture, output format (markdown/raw/SQLite), configuration env vars table, testing commands, and common copy-paste recipes. Verified against actual CLI, settings, and package exports.
