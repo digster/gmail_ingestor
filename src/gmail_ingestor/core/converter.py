@@ -89,6 +89,14 @@ class MarkdownConverter:
         if header.cc:
             cc = header.cc.replace('"', '\\"')
             lines.append(f'cc: "{cc}"')
+        if header.label_names:
+            escaped_names = [name.replace('"', '\\"') for name in header.label_names]
+            names_str = ", ".join(f'"{n}"' for n in escaped_names)
+            lines.append(f"labels: [{names_str}]")
+        if header.label_ids:
+            escaped_ids = [lid.replace('"', '\\"') for lid in header.label_ids]
+            ids_str = ", ".join(f'"{lid}"' for lid in escaped_ids)
+            lines.append(f"label_ids: [{ids_str}]")
         lines.append("---")
 
         return "\n".join(lines)

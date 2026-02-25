@@ -384,3 +384,125 @@ class TestContextManager:
         tracker = FetchTracker(tmp_db_path)
         with pytest.raises(RuntimeError, match="not connected"):
             _ = tracker.conn
+
+
+class TestLabelsTable:
+    """Tests for the labels table and upsert_labels method."""
+
+    def test_creates_labels_table(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tables = tracker.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='labels'"
+            ).fetchall()
+            assert len(tables) == 1
+
+    def test_creates_message_labels_table(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tables = tracker.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='message_labels'"
+            ).fetchall()
+            assert len(tables) == 1
+
+    def test_upsert_labels_inserts(self, tmp_db_path: Path) -> None:
+        labels = [
+            {"id": "INBOX", "name": "Inbox"},
+            {"id": "SENT", "name": "Sent"},
+            {"id": "Label_1", "name": "Work"},
+        ]
+        with FetchTracker(tmp_db_path) as tracker:
+            count = tracker.upsert_labels(labels)
+            assert count == 3
+
+            row = tracker.conn.execute(
+                "SELECT label_name FROM labels WHERE label_id = 'INBOX'"
+            ).fetchone()
+            assert row["label_name"] == "Inbox"
+
+    def test_upsert_labels_updates_existing(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.upsert_labels([{"id": "Label_1", "name": "Old Name"}])
+            tracker.upsert_labels([{"id": "Label_1", "name": "New Name"}])
+
+            row = tracker.conn.execute(
+                "SELECT label_name FROM labels WHERE label_id = 'Label_1'"
+            ).fetchone()
+            assert row["label_name"] == "New Name"
+
+    def test_upsert_labels_empty_list(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            count = tracker.upsert_labels([])
+            assert count == 0
+
+
+class TestMessageLabels:
+    """Tests for insert_message_labels and get_message_labels."""
+
+    def test_insert_and_get_message_labels(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.insert_pending("msg1", "t1", "INBOX")
+            tracker.upsert_labels([
+                {"id": "INBOX", "name": "Inbox"},
+                {"id": "IMPORTANT", "name": "Important"},
+            ])
+            tracker.insert_message_labels("msg1", ("INBOX", "IMPORTANT"))
+
+            labels = tracker.get_message_labels("msg1")
+            assert len(labels) == 2
+            ids = {lbl["id"] for lbl in labels}
+            names = {lbl["name"] for lbl in labels}
+            assert ids == {"INBOX", "IMPORTANT"}
+            assert names == {"Inbox", "Important"}
+
+    def test_insert_message_labels_ignores_duplicates(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.insert_pending("msg1", "t1", "INBOX")
+            tracker.upsert_labels([{"id": "INBOX", "name": "Inbox"}])
+            tracker.insert_message_labels("msg1", ("INBOX",))
+            tracker.insert_message_labels("msg1", ("INBOX",))
+
+            labels = tracker.get_message_labels("msg1")
+            assert len(labels) == 1
+
+    def test_get_message_labels_returns_empty_for_unknown(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            labels = tracker.get_message_labels("nonexistent")
+            assert labels == []
+
+    def test_get_message_labels_falls_back_to_id_when_no_label_row(
+        self, tmp_db_path: Path
+    ) -> None:
+        """When a label_id in message_labels has no matching labels row, use the ID as name."""
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.insert_pending("msg1", "t1", "INBOX")
+            # Insert into message_labels without a corresponding labels row
+            tracker.conn.execute(
+                "INSERT INTO message_labels (message_id, label_id) VALUES (?, ?)",
+                ("msg1", "UNKNOWN_LABEL"),
+            )
+            tracker.conn.commit()
+
+            labels = tracker.get_message_labels("msg1")
+            assert len(labels) == 1
+            assert labels[0]["id"] == "UNKNOWN_LABEL"
+            assert labels[0]["name"] == "UNKNOWN_LABEL"
+
+    def test_get_message_labels_sorted_by_name(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.insert_pending("msg1", "t1", "INBOX")
+            tracker.upsert_labels([
+                {"id": "SENT", "name": "Sent"},
+                {"id": "INBOX", "name": "Inbox"},
+                {"id": "Label_1", "name": "Alpha"},
+            ])
+            tracker.insert_message_labels("msg1", ("SENT", "INBOX", "Label_1"))
+
+            labels = tracker.get_message_labels("msg1")
+            names = [lbl["name"] for lbl in labels]
+            assert names == ["Alpha", "Inbox", "Sent"]
+
+    def test_insert_message_labels_empty_tuple(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.insert_pending("msg1", "t1", "INBOX")
+            tracker.insert_message_labels("msg1", ())
+            labels = tracker.get_message_labels("msg1")
+            assert labels == []

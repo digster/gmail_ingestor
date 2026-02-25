@@ -74,6 +74,20 @@ class FetchTracker:
             CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
             CREATE INDEX IF NOT EXISTS idx_messages_label ON messages(label_id);
 
+            CREATE TABLE IF NOT EXISTS labels (
+                label_id TEXT PRIMARY KEY,
+                label_name TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS message_labels (
+                message_id TEXT NOT NULL,
+                label_id TEXT NOT NULL,
+                PRIMARY KEY (message_id, label_id),
+                FOREIGN KEY (message_id) REFERENCES messages(message_id),
+                FOREIGN KEY (label_id) REFERENCES labels(label_id)
+            );
+
             CREATE TABLE IF NOT EXISTS fetch_runs (
                 run_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label_id TEXT NOT NULL,
@@ -243,6 +257,61 @@ class FetchTracker:
             (now, ids_discovered, messages_fetched, messages_converted, messages_failed, run_id),
         )
         self.conn.commit()
+
+    def upsert_labels(self, labels: list[dict[str, str]]) -> int:
+        """Bulk upsert label ID → name mappings from Gmail API.
+
+        Args:
+            labels: List of dicts with 'id' and 'name' keys.
+
+        Returns:
+            Number of labels upserted.
+        """
+        now = datetime.now(UTC).isoformat()
+        rows = [(lbl["id"], lbl["name"], now) for lbl in labels]
+        self.conn.executemany(
+            """INSERT INTO labels (label_id, label_name, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(label_id) DO UPDATE SET
+                   label_name = excluded.label_name,
+                   updated_at = excluded.updated_at""",
+            rows,
+        )
+        self.conn.commit()
+        return len(rows)
+
+    def insert_message_labels(self, message_id: str, label_ids: tuple[str, ...]) -> None:
+        """Populate the message_labels junction table for a message.
+
+        Args:
+            message_id: Gmail message ID.
+            label_ids: Tuple of label IDs associated with the message.
+        """
+        rows = [(message_id, lid) for lid in label_ids]
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO message_labels (message_id, label_id) VALUES (?, ?)",
+            rows,
+        )
+        self.conn.commit()
+
+    def get_message_labels(self, message_id: str) -> list[dict[str, str]]:
+        """Get label IDs and names for a message via JOIN.
+
+        Args:
+            message_id: Gmail message ID.
+
+        Returns:
+            List of dicts with 'id' and 'name' keys, sorted by label name.
+        """
+        rows = self.conn.execute(
+            """SELECT ml.label_id, COALESCE(l.label_name, ml.label_id) as label_name
+               FROM message_labels ml
+               LEFT JOIN labels l ON ml.label_id = l.label_id
+               WHERE ml.message_id = ?
+               ORDER BY label_name""",
+            (message_id,),
+        ).fetchall()
+        return [{"id": row["label_id"], "name": row["label_name"]} for row in rows]
 
     def retry_failed(self) -> int:
         """Reset all 'failed' messages back to 'pending' for retry.

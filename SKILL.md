@@ -93,13 +93,15 @@ subject: "Weekly Newsletter"
 from: "newsletter@example.com"
 to: "you@gmail.com"
 date: 2024-01-15 10:30:00
+labels: ["Inbox", "Newsletters"]
+label_ids: ["INBOX", "Label_42"]
 ---
 # Converted body content here...
 ```
 
 **Raw** (`output/raw/`): `{id}.txt` and `{id}.html` — original email bodies preserved for re-conversion.
 
-**SQLite** (`data/gmail_ingestor.db`): `messages` table (status tracking + dedup), `fetch_runs` table (audit history).
+**SQLite** (`data/gmail_ingestor.db`): `messages` (status tracking + dedup), `fetch_runs` (audit history), `labels` (label ID→name lookup), `message_labels` (per-message label associations).
 
 ## Configuration
 

@@ -170,6 +170,50 @@ class TestYamlFrontMatter:
         assert "date: 2025-12-31 23:59:59" in result.markdown
 
 
+class TestLabelFrontMatter:
+    """YAML front matter includes labels and label_ids when present."""
+
+    def test_front_matter_includes_labels(self, sample_body_text_only: EmailBody) -> None:
+        header = EmailHeader(
+            subject="Label Test",
+            sender="a@example.com",
+            to="b@example.com",
+            date=datetime(2024, 1, 1, 0, 0, 0),
+            label_names=("Inbox", "Work Projects"),
+            label_ids=("INBOX", "Label_123"),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        assert 'labels: ["Inbox", "Work Projects"]' in result.markdown
+        assert 'label_ids: ["INBOX", "Label_123"]' in result.markdown
+
+    def test_front_matter_omits_labels_when_empty(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, sample_header, sample_body_text_only)
+
+        assert "labels:" not in result.markdown
+        assert "label_ids:" not in result.markdown
+
+    def test_front_matter_escapes_quotes_in_label_names(
+        self, sample_body_text_only: EmailBody
+    ) -> None:
+        header = EmailHeader(
+            subject="Quote Test",
+            sender="a@example.com",
+            to="b@example.com",
+            date=datetime(2024, 1, 1, 0, 0, 0),
+            label_names=('My "Special" Label',),
+            label_ids=("Label_999",),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        assert 'labels: ["My \\"Special\\" Label"]' in result.markdown
+
+
 class TestSpecialCharacterEscaping:
     """Special characters in header values are properly escaped."""
 

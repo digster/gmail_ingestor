@@ -24,6 +24,8 @@ class EmailHeader:
     date: datetime
     cc: str = ""
     message_id_header: str = ""
+    label_ids: tuple[str, ...] = field(default_factory=tuple)
+    label_names: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

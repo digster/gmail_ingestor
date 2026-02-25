@@ -110,6 +110,7 @@ class EmailIngestor:
         self._notify()
 
         try:
+            self._sync_labels()
             self.run_discovery(label, query=query, limit=limit, offset=offset)
             self.run_fetch_pending(batch_size=batch_size)
             self.run_convert_pending(batch_size=batch_size)
@@ -239,6 +240,10 @@ class EmailIngestor:
                 try:
                     email = self._parser.parse(raw_msg)
 
+                    # Persist per-message labels
+                    if email.label_ids:
+                        tracker.insert_message_labels(msg_id, email.label_ids)
+
                     # Save raw content
                     raw_paths: dict[str, Any] = {}
                     if email.body:
@@ -343,11 +348,18 @@ class EmailIngestor:
                     except ValueError:
                         date = datetime(1970, 1, 1)
 
+                    # Hydrate labels from the junction table
+                    msg_labels = tracker.get_message_labels(msg_id)
+                    label_ids_tuple = tuple(lbl["id"] for lbl in msg_labels)
+                    label_names_tuple = tuple(lbl["name"] for lbl in msg_labels)
+
                     header = EmailHeader(
                         subject=msg_record.get("subject", "(no subject)"),
                         sender=msg_record.get("sender", ""),
                         to="",
                         date=date,
+                        label_ids=label_ids_tuple,
+                        label_names=label_names_tuple,
                     )
 
                     converted = self._converter.convert(msg_id, header, body)
@@ -390,6 +402,16 @@ class EmailIngestor:
         """Clean up resources."""
         if self._tracker:
             self._tracker.close()
+
+    def _sync_labels(self) -> None:
+        """Fetch all Gmail labels and upsert into the labels table."""
+        client, tracker, _, _ = self._ensure_initialized()
+        try:
+            labels = client.list_labels()
+            count = tracker.upsert_labels(labels)
+            logger.info("Synced %d labels from Gmail", count)
+        except Exception as e:
+            logger.warning("Label sync failed (non-fatal): %s", e)
 
     def _notify(self) -> None:
         """Send progress update to callback if registered."""

@@ -66,6 +66,17 @@ pending → fetched → converted
 
 The `fetch_runs` table provides audit history of each ingestion run.
 
+### Label Storage
+
+Labels are stored in two additional tables:
+
+```
+labels           → label_id (PK) → label_name, updated_at   (synced from Gmail API)
+message_labels   → (message_id, label_id) composite PK      (per-message label junction)
+```
+
+At the start of each `run()`, `_sync_labels()` fetches all labels from Gmail and upserts them into the `labels` table. During Stage 2 (fetch), each message's `labelIds` are persisted to `message_labels`. During Stage 3 (convert), labels are hydrated via JOIN and injected into `EmailHeader` for frontmatter generation.
+
 ## Directory Layout
 
 ```
@@ -78,7 +89,7 @@ src/gmail_ingestor/
 │   ├── parser.py       # GmailParser: recursive MIME walk, base64url decode, header extraction
 │   └── converter.py    # MarkdownConverter: trafilatura + fallback + YAML front matter
 ├── storage/
-│   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs tables
+│   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs + labels + message_labels tables
 │   ├── raw_store.py    # RawEmailStore: saves original text/html to output/raw/
 │   └── writer.py       # MarkdownWriter: {date}_{slug}_{id}.md naming, Unicode-safe slugify
 ├── pipeline/

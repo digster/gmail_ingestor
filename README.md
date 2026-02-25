@@ -9,7 +9,7 @@ Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown
 - **Raw preservation**: Original email text/HTML saved alongside converted markdown
 - **Generator-based pagination**: Consumers control fetch pace for progress reporting
 - **Trafilatura conversion**: HTML → text with `favor_recall=True` for email layouts
-- **YAML front matter**: Each markdown file includes subject, from, to, date metadata
+- **YAML front matter**: Each markdown file includes subject, from, to, date, labels metadata
 - **Progress callbacks**: `on_progress` hook for real-time TUI/GUI updates
 - **CLI pagination**: `--limit`, `--offset`, `--batch-size` flags for controlled runs
 
@@ -135,6 +135,8 @@ subject: "Weekly Newsletter"
 from: "newsletter@example.com"
 to: "you@gmail.com"
 date: 2024-01-15 10:30:00
+labels: ["Inbox", "Newsletters"]
+label_ids: ["INBOX", "Label_42"]
 ---
 ```
 
