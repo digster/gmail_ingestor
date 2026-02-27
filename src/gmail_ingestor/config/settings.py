@@ -33,6 +33,14 @@ class GmailIngestorSettings(BaseSettings):
     # Database
     database_path: Path = Path("data/gmail_ingestor.db")
 
+    # Rate limiting & retry
+    max_retries: int = 5
+    initial_backoff_seconds: float = 1.0
+    max_backoff_seconds: float = 60.0
+    inter_batch_delay_seconds: float = 1.0
+    inter_page_delay_seconds: float = 0.2
+    num_retries: int = 3
+
     # Logging
     log_level: str = "INFO"
 

@@ -36,7 +36,7 @@ All commands: `uv run python scripts/cli.py <command>`
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--label`, `-l` | string | from `.env` | Gmail label ID |
+| `--label`, `-l` | string | from `.env` | Gmail label ID (comma-separated for multiple, e.g. `INBOX,SENT`) |
 | `--query`, `-q` | string | — | Gmail search query |
 | `--limit` | int | unlimited | Cap total messages processed |
 | `--offset` | int | `0` | Skip first N messages |
@@ -117,6 +117,12 @@ All env vars use the `GMAIL_` prefix. Loaded from `.env` via pydantic-settings.
 | `GMAIL_OUTPUT_MARKDOWN_DIR` | `output/markdown` | Markdown output directory |
 | `GMAIL_OUTPUT_RAW_DIR` | `output/raw` | Raw email output directory |
 | `GMAIL_DATABASE_PATH` | `data/gmail_ingestor.db` | SQLite database path |
+| `GMAIL_MAX_RETRIES` | `5` | Max retry attempts on 429 rate limit |
+| `GMAIL_INITIAL_BACKOFF_SECONDS` | `1.0` | Starting backoff for retries |
+| `GMAIL_MAX_BACKOFF_SECONDS` | `60.0` | Backoff cap |
+| `GMAIL_INTER_BATCH_DELAY_SECONDS` | `1.0` | Pause between fetch batches |
+| `GMAIL_INTER_PAGE_DELAY_SECONDS` | `0.2` | Pause between discovery pages |
+| `GMAIL_NUM_RETRIES` | `3` | google-api-python-client built-in retries (5xx/transport) |
 | `GMAIL_LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
 
 ## Testing
@@ -151,9 +157,19 @@ uv run python scripts/cli.py discover --label INBOX
 uv run python scripts/cli.py fetch-pending --batch-size 10 --limit 20
 uv run python scripts/cli.py convert-pending
 
+# Fetch from multiple labels in one run
+uv run python scripts/cli.py fetch --label "INBOX,SENT" --limit 20
+
+# Discover from multiple labels
+uv run python scripts/cli.py discover --label "INBOX,SENT,Label_42"
+
 # Check pipeline progress
 uv run python scripts/cli.py status
 
 # Skip first 100 messages, fetch next 50
 uv run python scripts/cli.py fetch --label INBOX --offset 100 --limit 50
+
+# Debug rate limiting (see retry/delay logs)
+uv run python scripts/cli.py fetch --label INBOX --limit 200 --batch-size 50
+# (set GMAIL_LOG_LEVEL=DEBUG in .env for verbose output)
 ```

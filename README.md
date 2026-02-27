@@ -11,6 +11,8 @@ Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown
 - **Trafilatura conversion**: HTML → text with `favor_recall=True` for email layouts
 - **YAML front matter**: Each markdown file includes subject, from, to, date, labels metadata
 - **Progress callbacks**: `on_progress` hook for real-time TUI/GUI updates
+- **Rate limiting & retry**: Exponential backoff with jitter on 429 errors, inter-batch/inter-page delays
+- **Multi-label support**: Comma-separated `--label` flag (e.g. `--label "INBOX,SENT"`)
 - **CLI pagination**: `--limit`, `--offset`, `--batch-size` flags for controlled runs
 
 ## Setup
@@ -55,6 +57,12 @@ Key settings (all prefixed with `GMAIL_`):
 | `GMAIL_OUTPUT_MARKDOWN_DIR` | `output/markdown` | Markdown output directory |
 | `GMAIL_OUTPUT_RAW_DIR` | `output/raw` | Raw email output directory |
 | `GMAIL_DATABASE_PATH` | `data/gmail_ingestor.db` | SQLite database path |
+| `GMAIL_MAX_RETRIES` | `5` | Max retry attempts on 429 rate limit |
+| `GMAIL_INITIAL_BACKOFF_SECONDS` | `1.0` | Starting backoff for retries |
+| `GMAIL_MAX_BACKOFF_SECONDS` | `60.0` | Backoff cap |
+| `GMAIL_INTER_BATCH_DELAY_SECONDS` | `1.0` | Pause between fetch batches |
+| `GMAIL_INTER_PAGE_DELAY_SECONDS` | `0.2` | Pause between discovery pages |
+| `GMAIL_NUM_RETRIES` | `3` | Built-in retries for 5xx/transport errors |
 | `GMAIL_LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, etc.) |
 
 ## Usage
@@ -67,6 +75,9 @@ uv run python scripts/cli.py list-labels
 
 # Fetch and convert all emails from a label
 uv run python scripts/cli.py fetch --label INBOX
+
+# Fetch from multiple labels
+uv run python scripts/cli.py fetch --label "INBOX,SENT"
 
 # Fetch with a search query
 uv run python scripts/cli.py fetch --label INBOX --query "from:newsletter@example.com"

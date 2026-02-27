@@ -85,7 +85,7 @@ src/gmail_ingestor/
 │   ├── models.py       # Frozen dataclasses (MessageStub, EmailHeader, EmailBody, EmailMessage, ConvertedEmail, FetchProgress)
 │   ├── exceptions.py   # Exception hierarchy (GmailIngestorError → Auth/RateLimit/Parse/Conversion)
 │   ├── auth.py         # OAuth 2.0 with token caching, SCOPES = gmail.readonly
-│   ├── gmail_client.py # GmailClient: list_labels, discover_message_ids (generator), fetch_messages_batch
+│   ├── gmail_client.py # GmailClient: list_labels, discover_message_ids (generator), fetch_messages_batch, _execute_with_retry
 │   ├── parser.py       # GmailParser: recursive MIME walk, base64url decode, header extraction
 │   └── converter.py    # MarkdownConverter: trafilatura + fallback + YAML front matter
 ├── storage/
@@ -97,6 +97,15 @@ src/gmail_ingestor/
 └── config/
     └── settings.py     # GmailIngestorSettings via pydantic-settings (GMAIL_ env prefix)
 ```
+
+## Rate Limiting & Retry
+
+`GmailClient` implements two-tier retry handling:
+
+1. **Transport-level retries** (`num_retries`): Passed to `request.execute()`, handled by `google-api-python-client` for 5xx and transient transport errors.
+2. **Application-level retries** (`max_retries`): Custom exponential backoff with jitter for 429 rate limit errors. `_execute_with_retry()` wraps single API calls; `fetch_messages_batch()` wraps entire batch calls (since `BatchHttpRequest.execute()` doesn't accept `num_retries`).
+
+The pipeline adds inter-batch (`inter_batch_delay_seconds`) and inter-page (`inter_page_delay_seconds`) delays to stay within Gmail API quota (250 units/second). `RateLimitError` propagates from `GmailClient` through `EmailIngestor` to the caller — retries are already exhausted by the time it reaches the pipeline layer.
 
 ## Design Decisions
 

@@ -133,15 +133,23 @@ def main() -> None:
                 print(f"  {label['id']:40s} {label['name']}")
 
         elif args.command == "fetch":
-            label = getattr(args, "label", None)
+            labels_raw = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            progress = ingestor.run(
-                label_id=label,
-                query=query,
-                limit=args.limit,
-                offset=args.offset,
-                batch_size=args.batch_size,
+            labels = (
+                [l.strip() for l in labels_raw.split(",") if l.strip()]
+                if labels_raw
+                else [None]
             )
+            for label in labels:
+                if len(labels) > 1 and label is not None:
+                    print(f"\n--- Fetching label: {label} ---")
+                progress = ingestor.run(
+                    label_id=label,
+                    query=query,
+                    limit=args.limit,
+                    offset=args.offset,
+                    batch_size=args.batch_size,
+                )
             print(f"\n\nComplete: {progress}")
 
         elif args.command == "status":
@@ -155,15 +163,25 @@ def main() -> None:
             print(f"\nReset {count} failed messages to pending")
 
         elif args.command == "discover":
-            label = getattr(args, "label", None)
+            labels_raw = getattr(args, "label", None)
             query = getattr(args, "query", None)
-            count = ingestor.run_discovery(
-                label_id=label,
-                query=query,
-                limit=args.limit,
-                offset=args.offset,
+            labels = (
+                [l.strip() for l in labels_raw.split(",") if l.strip()]
+                if labels_raw
+                else [None]
             )
-            print(f"\n\nDiscovered {count} new message IDs")
+            total_count = 0
+            for label in labels:
+                if len(labels) > 1 and label is not None:
+                    print(f"\n--- Discovering label: {label} ---")
+                count = ingestor.run_discovery(
+                    label_id=label,
+                    query=query,
+                    limit=args.limit,
+                    offset=args.offset,
+                )
+                total_count += count
+            print(f"\n\nDiscovered {total_count} new message IDs")
 
         elif args.command == "fetch-pending":
             count = ingestor.run_fetch_pending(

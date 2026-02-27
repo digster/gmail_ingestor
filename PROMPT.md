@@ -21,3 +21,7 @@ Create SKILL.md — a concise, action-oriented quick-reference guide covering on
 ## 2026-02-25
 
 Save label names in DB and add labels to markdown frontmatter. Added `labels` table (label_id→name lookup synced from Gmail API) and `message_labels` junction table (per-message label associations) to SQLite schema. Added `upsert_labels()`, `insert_message_labels()`, `get_message_labels()` methods to FetchTracker. Added `label_ids` and `label_names` tuple fields to EmailHeader. Updated markdown frontmatter to include `labels:` and `label_ids:` YAML lists. Wired `_sync_labels()` at pipeline start, label persistence in fetch stage, label hydration in convert stage. Added tests for all new functionality.
+
+## 2026-02-27
+
+Implement rate limiting, backoff & retry for Gmail Ingestor. Added exponential backoff with jitter on 429 errors, inter-batch and inter-page delays, automatic retry with configurable limits, and proper multi-label support via comma-separated `--label` flag. Added 6 new settings (max_retries, initial_backoff_seconds, max_backoff_seconds, inter_batch_delay_seconds, inter_page_delay_seconds, num_retries). Refactored GmailClient to use `_execute_with_retry()` for single API calls and batch-level retry for `fetch_messages_batch()`. RateLimitError now propagates through the pipeline. CLI `fetch` and `discover` commands loop over comma-separated labels sequentially.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Any
 from gmail_ingestor.config.settings import GmailIngestorSettings
 from gmail_ingestor.core.auth import authenticate, build_gmail_service
 from gmail_ingestor.core.converter import MarkdownConverter
-from gmail_ingestor.core.exceptions import ConversionError, GmailIngestorError
+from gmail_ingestor.core.exceptions import ConversionError, GmailIngestorError, RateLimitError
 from gmail_ingestor.core.gmail_client import GmailClient
 from gmail_ingestor.core.models import EmailBody, EmailHeader, FetchProgress
 from gmail_ingestor.core.parser import GmailParser
@@ -67,7 +68,14 @@ class EmailIngestor:
                 self._settings.token_path,
             )
             service = build_gmail_service(creds)
-            self._client = GmailClient(service)
+            self._client = GmailClient(
+                service,
+                max_retries=self._settings.max_retries,
+                initial_backoff_seconds=self._settings.initial_backoff_seconds,
+                max_backoff_seconds=self._settings.max_backoff_seconds,
+                inter_page_delay_seconds=self._settings.inter_page_delay_seconds,
+                num_retries=self._settings.num_retries,
+            )
 
         if self._tracker is None:
             self._tracker = FetchTracker(self._settings.database_path)
@@ -230,6 +238,8 @@ class EmailIngestor:
 
             try:
                 raw_messages = client.fetch_messages_batch(pending_ids)
+            except RateLimitError:
+                raise
             except GmailIngestorError as e:
                 logger.error("Batch fetch failed: %s", e)
                 break
@@ -279,6 +289,9 @@ class EmailIngestor:
                             msg_id, "failed", error_message="Not returned in batch response"
                         )
                         self._progress.messages_failed += 1
+
+            if self._settings.inter_batch_delay_seconds > 0:
+                time.sleep(self._settings.inter_batch_delay_seconds)
 
         return total_fetched
 

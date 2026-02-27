@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from gmail_ingestor.config.settings import GmailIngestorSettings
-from gmail_ingestor.core.exceptions import ConversionError
+from gmail_ingestor.core.exceptions import ConversionError, RateLimitError
 from gmail_ingestor.core.models import (
     ConvertedEmail,
     EmailBody,
@@ -811,3 +811,159 @@ class TestRunPipelinePagination:
         # Fetch/convert should use the custom batch size
         mock_tracker.get_pending_ids.assert_called_with(limit=25, offset=0)
         mock_tracker.get_fetched_ids.assert_called_with(limit=25, offset=0)
+
+
+# ---------- Inter-batch delay ----------
+
+
+class TestInterBatchDelay:
+    """Tests for inter-batch delay in run_fetch_pending()."""
+
+    def test_inter_batch_delay_is_applied(
+        self,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """run_fetch_pending() sleeps inter_batch_delay_seconds between batches."""
+        settings = GmailIngestorSettings(
+            credentials_path=tmp_path / "creds" / "client_secret.json",
+            token_path=tmp_path / "creds" / "token.json",
+            database_path=tmp_path / "data" / "test.db",
+            output_markdown_dir=tmp_path / "output" / "markdown",
+            output_raw_dir=tmp_path / "output" / "raw",
+            inter_batch_delay_seconds=2.0,
+            batch_size=2,
+        )
+
+        # Two batches of pending IDs, then empty
+        mock_tracker.get_pending_ids.side_effect = [["m1", "m2"], ["m3"], []]
+
+        header = EmailHeader(
+            subject="Test", sender="s@test.com", to="r@test.com",
+            date=datetime(2024, 1, 1),
+        )
+        body = EmailBody(plain_text="Hello")
+
+        def make_email(raw_msg: dict) -> EmailMessage:
+            return EmailMessage(
+                message_id=raw_msg["id"], thread_id="t1", header=header, body=body,
+            )
+
+        mock_parser.parse.side_effect = make_email
+        mock_gmail_client.fetch_messages_batch.side_effect = [
+            [{"id": "m1"}, {"id": "m2"}],
+            [{"id": "m3"}],
+        ]
+        mock_raw_store.store.return_value = {}
+        mock_tracker.get_message.return_value = None
+
+        ingestor = _build_ingestor(
+            settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        with patch("gmail_ingestor.pipeline.ingestor.time.sleep") as mock_sleep:
+            total = ingestor.run_fetch_pending()
+
+        assert total == 3
+        # Sleep should be called twice (once after each batch)
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_called_with(2.0)
+
+    def test_no_delay_when_inter_batch_delay_is_zero(
+        self,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """No sleep when inter_batch_delay_seconds is 0."""
+        settings = GmailIngestorSettings(
+            credentials_path=tmp_path / "creds" / "client_secret.json",
+            token_path=tmp_path / "creds" / "token.json",
+            database_path=tmp_path / "data" / "test.db",
+            output_markdown_dir=tmp_path / "output" / "markdown",
+            output_raw_dir=tmp_path / "output" / "raw",
+            inter_batch_delay_seconds=0.0,
+        )
+
+        mock_tracker.get_pending_ids.return_value = []
+
+        ingestor = _build_ingestor(
+            settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        with patch("gmail_ingestor.pipeline.ingestor.time.sleep") as mock_sleep:
+            ingestor.run_fetch_pending()
+
+        mock_sleep.assert_not_called()
+
+
+# ---------- RateLimitError propagation ----------
+
+
+class TestRateLimitErrorPropagation:
+    """Tests for RateLimitError propagation in run_fetch_pending()."""
+
+    def test_rate_limit_error_propagates_from_fetch(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """RateLimitError from fetch_messages_batch() propagates to caller."""
+        mock_tracker.get_pending_ids.return_value = ["m1"]
+        mock_gmail_client.fetch_messages_batch.side_effect = RateLimitError(
+            "Rate limited after retries"
+        )
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        with patch("gmail_ingestor.pipeline.ingestor.time.sleep"):
+            with pytest.raises(RateLimitError, match="Rate limited after retries"):
+                ingestor.run_fetch_pending()
+
+    def test_non_rate_limit_error_breaks_loop_without_raising(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """Non-rate-limit GmailIngestorError breaks the loop gracefully."""
+        from gmail_ingestor.core.exceptions import GmailIngestorError
+
+        mock_tracker.get_pending_ids.return_value = ["m1"]
+        mock_gmail_client.fetch_messages_batch.side_effect = GmailIngestorError(
+            "Network timeout"
+        )
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        with patch("gmail_ingestor.pipeline.ingestor.time.sleep"):
+            # Should NOT raise — it breaks the loop
+            total = ingestor.run_fetch_pending()
+
+        assert total == 0
