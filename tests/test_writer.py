@@ -45,8 +45,8 @@ class TestWrite:
         writer = MarkdownWriter(tmp_output_dir)
         path = writer.write(sample_converted_email)
 
-        # Expected: 2024-01-15_weekly-newsletter_18a3f2b0.md
-        assert path.name == "2024-01-15_weekly-newsletter_18a3f2b0.md"
+        # Expected: weekly-newsletter_18a3f2b0.md
+        assert path.name == "weekly-newsletter_18a3f2b0.md"
 
     def test_content_preserved(
         self, tmp_output_dir: Path, sample_converted_email: ConvertedEmail

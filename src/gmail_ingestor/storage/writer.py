@@ -1,4 +1,4 @@
-"""Markdown file writer with date/slug/ID naming convention."""
+"""Markdown file writer with slug/ID naming convention."""
 
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ class MarkdownWriter:
     def write(self, email: ConvertedEmail) -> Path:
         """Write a converted email to a markdown file.
 
-        File naming: {date}_{slug}_{id}.md
-        Example: 2024-01-15_weekly-newsletter_18a3f2b.md
+        File naming: {slug}_{id}.md
+        Example: weekly-newsletter_18a3f2b0.md
 
         Args:
             email: Converted email with markdown content.
@@ -31,10 +31,9 @@ class MarkdownWriter:
         Returns:
             Path to the written file.
         """
-        date_str = email.header.date.strftime("%Y-%m-%d")
         slug = self._slugify(email.header.subject)
         short_id = email.message_id[:8]
-        filename = f"{date_str}_{slug}_{short_id}.md"
+        filename = f"{slug}_{short_id}.md"
 
         filepath = self._output_dir / filename
         filepath.write_text(email.markdown, encoding="utf-8")

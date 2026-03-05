@@ -51,7 +51,7 @@ Gmail API  →  MessageStub (id, threadId)
            →  GmailParser → EmailMessage (header + body)
            →  RawEmailStore → {id}.txt, {id}.html (original preservation)
            →  MarkdownConverter → ConvertedEmail (YAML front matter + body)
-           →  MarkdownWriter → {date}_{slug}_{id}.md
+           →  MarkdownWriter → {slug}_{id}.md
 ```
 
 ## State Machine
@@ -91,7 +91,7 @@ src/gmail_ingestor/
 ├── storage/
 │   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs + labels + message_labels tables
 │   ├── raw_store.py    # RawEmailStore: saves original text/html to output/raw/
-│   └── writer.py       # MarkdownWriter: {date}_{slug}_{id}.md naming, Unicode-safe slugify
+│   └── writer.py       # MarkdownWriter: {slug}_{id}.md naming, Unicode-safe slugify
 ├── pipeline/
 │   └── ingestor.py     # EmailIngestor: 3-stage orchestrator with progress callbacks
 └── config/

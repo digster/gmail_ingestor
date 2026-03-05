@@ -134,8 +134,8 @@ ingestor.close()
 Markdown files are written to `output/markdown/` with the naming convention:
 
 ```
-{date}_{slug}_{id}.md
-# Example: 2024-01-15_weekly-newsletter_18a3f2b.md
+{slug}_{id}.md
+# Example: weekly-newsletter_18a3f2b0.md
 ```
 
 Each file includes YAML front matter:

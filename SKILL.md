@@ -85,7 +85,7 @@ Each stage is independently resumable — crash mid-fetch and re-run picks up wh
 
 ## Output Format
 
-**Markdown** (`output/markdown/`): `{date}_{slug}_{id}.md`
+**Markdown** (`output/markdown/`): `{slug}_{id}.md`
 
 ```yaml
 ---
