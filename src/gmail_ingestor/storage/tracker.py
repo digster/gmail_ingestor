@@ -98,6 +98,12 @@ class FetchTracker:
                 messages_converted INTEGER DEFAULT 0,
                 messages_failed INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS sync_state (
+                label_id TEXT PRIMARY KEY,
+                history_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
         """)
 
     def insert_pending(self, message_id: str, thread_id: str, label_id: str) -> bool:
@@ -312,6 +318,26 @@ class FetchTracker:
             (message_id,),
         ).fetchall()
         return [{"id": row["label_id"], "name": row["label_name"]} for row in rows]
+
+    def get_history_id(self, label_id: str) -> str | None:
+        """Get the stored historyId for a label, or None if not set."""
+        row = self.conn.execute(
+            "SELECT history_id FROM sync_state WHERE label_id = ?", (label_id,)
+        ).fetchone()
+        return row["history_id"] if row else None
+
+    def set_history_id(self, label_id: str, history_id: str) -> None:
+        """Upsert the historyId for a label after a successful discovery."""
+        now = datetime.now(UTC).isoformat()
+        self.conn.execute(
+            """INSERT INTO sync_state (label_id, history_id, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(label_id) DO UPDATE SET
+                   history_id = excluded.history_id,
+                   updated_at = excluded.updated_at""",
+            (label_id, history_id, now),
+        )
+        self.conn.commit()
 
     def retry_failed(self) -> int:
         """Reset all 'failed' messages back to 'pending' for retry.

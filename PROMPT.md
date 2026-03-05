@@ -29,3 +29,7 @@ Implement rate limiting, backoff & retry for Gmail Ingestor. Added exponential b
 ## 2026-03-04
 
 Change markdown file naming from `{date}_{slug}_{id}.md` to `{slug}_{id}.md`. Removed date prefix from filenames since the date is already in YAML front matter. Updated writer.py, test_writer.py, and all documentation references.
+
+## 2026-03-04 (2)
+
+Add historyId-based incremental sync to discovery. Uses Gmail `history.list` API with stored `historyId` to discover only new messages since last run, falling back to full discovery on first run, expired historyId (404), `--query` usage, or `--full-sync` flag. New `sync_state` table, `HistoryExpiredError` exception, `get_profile_history_id()` and `discover_message_ids_incremental()` GmailClient methods. Refactored `run_discovery()` into `_discover_full()` + `_discover_from_history()`. Added `--full-sync` CLI flag to `fetch` and `discover` commands.

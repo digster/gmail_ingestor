@@ -19,3 +19,7 @@ class ParseError(GmailIngestorError):
 
 class ConversionError(GmailIngestorError):
     """Failed to convert email content to markdown."""
+
+
+class HistoryExpiredError(GmailIngestorError):
+    """Gmail history.list returned 404 — the stored historyId has expired."""

@@ -506,3 +506,50 @@ class TestMessageLabels:
             tracker.insert_message_labels("msg1", ())
             labels = tracker.get_message_labels("msg1")
             assert labels == []
+
+
+class TestSyncState:
+    """Tests for sync_state table and get/set_history_id methods."""
+
+    def test_creates_sync_state_table(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tables = tracker.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_state'"
+            ).fetchall()
+            assert len(tables) == 1
+
+    def test_get_history_id_returns_none_when_empty(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            assert tracker.get_history_id("INBOX") is None
+
+    def test_set_and_get_history_id(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.set_history_id("INBOX", "12345")
+            assert tracker.get_history_id("INBOX") == "12345"
+
+    def test_set_history_id_upserts(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.set_history_id("INBOX", "100")
+            tracker.set_history_id("INBOX", "200")
+            assert tracker.get_history_id("INBOX") == "200"
+
+    def test_different_labels_have_independent_history_ids(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.set_history_id("INBOX", "100")
+            tracker.set_history_id("SENT", "200")
+            assert tracker.get_history_id("INBOX") == "100"
+            assert tracker.get_history_id("SENT") == "200"
+
+    def test_set_history_id_updates_timestamp(self, tmp_db_path: Path) -> None:
+        with FetchTracker(tmp_db_path) as tracker:
+            tracker.set_history_id("INBOX", "100")
+            before = tracker.conn.execute(
+                "SELECT updated_at FROM sync_state WHERE label_id = 'INBOX'"
+            ).fetchone()["updated_at"]
+
+            tracker.set_history_id("INBOX", "200")
+            after = tracker.conn.execute(
+                "SELECT updated_at FROM sync_state WHERE label_id = 'INBOX'"
+            ).fetchone()["updated_at"]
+
+            assert after >= before

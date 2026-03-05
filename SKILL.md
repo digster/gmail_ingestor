@@ -25,8 +25,8 @@ All commands: `uv run python scripts/cli.py <command>`
 | Command | Description | Key Flags |
 |---|---|---|
 | `list-labels` | List all Gmail labels | — |
-| `fetch` | Full pipeline (discover + fetch + convert) | `--label`, `--query`, `--limit`, `--offset`, `--batch-size` |
-| `discover` | Stage 1: discover message IDs only | `--label`, `--query`, `--limit`, `--offset` |
+| `fetch` | Full pipeline (discover + fetch + convert) | `--label`, `--query`, `--limit`, `--offset`, `--batch-size`, `--full-sync` |
+| `discover` | Stage 1: discover message IDs only | `--label`, `--query`, `--limit`, `--offset`, `--full-sync` |
 | `fetch-pending` | Stage 2: fetch discovered messages | `--limit`, `--offset`, `--batch-size` |
 | `convert-pending` | Stage 3: convert fetched to markdown | `--limit`, `--offset`, `--batch-size` |
 | `status` | Show message counts by status | — |
@@ -41,6 +41,7 @@ All commands: `uv run python scripts/cli.py <command>`
 | `--limit` | int | unlimited | Cap total messages processed |
 | `--offset` | int | `0` | Skip first N messages |
 | `--batch-size` | int | from `.env` | Override batch size for fetch/convert |
+| `--full-sync` | flag | `false` | Skip incremental sync, re-scan all message IDs |
 
 ## Python API
 
@@ -51,8 +52,11 @@ from gmail_ingestor.config.settings import GmailIngestorSettings
 settings = GmailIngestorSettings()
 ingestor = EmailIngestor(settings=settings, on_progress=lambda p: print(p))
 
-# Full pipeline
+# Full pipeline (uses incremental sync automatically)
 progress = ingestor.run(label_id="INBOX", limit=20, offset=0, batch_size=25)
+
+# Force full re-scan
+progress = ingestor.run(label_id="INBOX", force_full_sync=True)
 
 # Individual stages
 ingestor.run_discovery(label_id="INBOX", limit=10, offset=5)
@@ -74,7 +78,7 @@ ingestor.close()
 ## Pipeline Architecture
 
 ```
-Stage 1 — Discovery    Gmail API → paginate message IDs → dedup → insert as 'pending'
+Stage 1 — Discovery    Gmail history.list (incremental) or messages.list (full) → dedup → insert as 'pending'
 Stage 2 — Fetch        Batch API fetch → parse MIME → save raw text/html → mark 'fetched'
 Stage 3 — Convert      trafilatura HTML→text → write .md with YAML front matter → mark 'converted'
 ```
@@ -101,7 +105,7 @@ label_ids: ["INBOX", "Label_42"]
 
 **Raw** (`output/raw/`): `{id}.txt` and `{id}.html` — original email bodies preserved for re-conversion.
 
-**SQLite** (`data/gmail_ingestor.db`): `messages` (status tracking + dedup), `fetch_runs` (audit history), `labels` (label ID→name lookup), `message_labels` (per-message label associations).
+**SQLite** (`data/gmail_ingestor.db`): `messages` (status tracking + dedup), `fetch_runs` (audit history), `labels` (label ID→name lookup), `message_labels` (per-message label associations), `sync_state` (per-label historyId for incremental sync).
 
 ## Configuration
 
@@ -156,6 +160,9 @@ uv run python scripts/cli.py fetch-pending
 uv run python scripts/cli.py discover --label INBOX
 uv run python scripts/cli.py fetch-pending --batch-size 10 --limit 20
 uv run python scripts/cli.py convert-pending
+
+# Force full re-scan (skip incremental sync)
+uv run python scripts/cli.py fetch --label INBOX --full-sync
 
 # Fetch from multiple labels in one run
 uv run python scripts/cli.py fetch --label "INBOX,SENT" --limit 20

@@ -12,8 +12,9 @@ Fetch Gmail emails by label and convert their HTML/text bodies to clean markdown
 - **YAML front matter**: Each markdown file includes subject, from, to, date, labels metadata
 - **Progress callbacks**: `on_progress` hook for real-time TUI/GUI updates
 - **Rate limiting & retry**: Exponential backoff with jitter on 429 errors, inter-batch/inter-page delays
+- **Incremental sync**: Uses Gmail `history.list` API to discover only new messages since last run
 - **Multi-label support**: Comma-separated `--label` flag (e.g. `--label "INBOX,SENT"`)
-- **CLI pagination**: `--limit`, `--offset`, `--batch-size` flags for controlled runs
+- **CLI pagination**: `--limit`, `--offset`, `--batch-size`, `--full-sync` flags for controlled runs
 
 ## Setup
 
@@ -82,8 +83,12 @@ uv run python scripts/cli.py fetch --label "INBOX,SENT"
 # Fetch with a search query
 uv run python scripts/cli.py fetch --label INBOX --query "from:newsletter@example.com"
 
+# Force full re-scan (skip incremental sync)
+uv run python scripts/cli.py fetch --label INBOX --full-sync
+
 # Run individual stages
 uv run python scripts/cli.py discover --label INBOX
+uv run python scripts/cli.py discover --label INBOX --full-sync
 uv run python scripts/cli.py fetch-pending
 uv run python scripts/cli.py convert-pending
 

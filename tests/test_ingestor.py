@@ -40,7 +40,10 @@ def tmp_settings(tmp_path: Path) -> GmailIngestorSettings:
 @pytest.fixture
 def mock_gmail_client() -> MagicMock:
     """Mocked GmailClient."""
-    return MagicMock()
+    client = MagicMock()
+    # Default historyId returned before discovery
+    client.get_profile_history_id.return_value = "12345"
+    return client
 
 
 @pytest.fixture
@@ -60,6 +63,8 @@ def mock_tracker() -> MagicMock:
     """Mocked FetchTracker."""
     tracker = MagicMock()
     tracker.start_run.return_value = 1
+    # Default: no stored historyId (first run → full discovery)
+    tracker.get_history_id.return_value = None
     return tracker
 
 
@@ -182,6 +187,180 @@ class TestRunDiscovery:
 
         assert total_new == 0
         mock_tracker.bulk_insert_pending.assert_not_called()
+
+
+# ---------- Incremental discovery ----------
+
+
+class TestIncrementalDiscovery:
+    """Tests for historyId-based incremental sync in run_discovery()."""
+
+    def test_uses_incremental_when_history_id_stored(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """When historyId exists, uses incremental discovery via history.list."""
+        mock_tracker.get_history_id.return_value = "50000"
+        page = [MessageStub(message_id="new1", thread_id="t1")]
+        mock_gmail_client.discover_message_ids_incremental.return_value = iter([page])
+        mock_tracker.bulk_insert_pending.return_value = 1
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        total = ingestor.run_discovery("INBOX")
+
+        assert total == 1
+        mock_gmail_client.discover_message_ids_incremental.assert_called_once_with(
+            "50000", "INBOX",
+        )
+        # Full discovery should NOT be called
+        mock_gmail_client.discover_message_ids.assert_not_called()
+        # historyId should be stored after success
+        mock_tracker.set_history_id.assert_called_once_with("INBOX", "12345")
+
+    def test_falls_back_to_full_on_expired_history(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """Falls back to full discovery when historyId is expired (HistoryExpiredError)."""
+        from gmail_ingestor.core.exceptions import HistoryExpiredError
+
+        mock_tracker.get_history_id.return_value = "expired_id"
+        mock_gmail_client.discover_message_ids_incremental.side_effect = (
+            HistoryExpiredError("expired")
+        )
+        # Full discovery fallback
+        page = [MessageStub(message_id="m1", thread_id="t1")]
+        mock_gmail_client.discover_message_ids.return_value = iter([page])
+        mock_tracker.bulk_insert_pending.return_value = 1
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        total = ingestor.run_discovery("INBOX")
+
+        assert total == 1
+        # Both incremental and full should have been attempted
+        mock_gmail_client.discover_message_ids_incremental.assert_called_once()
+        mock_gmail_client.discover_message_ids.assert_called_once()
+        # historyId should still be stored after successful fallback
+        mock_tracker.set_history_id.assert_called_once_with("INBOX", "12345")
+
+    def test_full_sync_when_query_set(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """Query parameter forces full discovery (history API doesn't support queries)."""
+        mock_tracker.get_history_id.return_value = "50000"
+        mock_gmail_client.discover_message_ids.return_value = iter([])
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingestor.run_discovery("INBOX", query="from:test@example.com")
+
+        # Should use full discovery, not incremental
+        mock_gmail_client.discover_message_ids.assert_called_once()
+        mock_gmail_client.discover_message_ids_incremental.assert_not_called()
+
+    def test_force_full_sync_flag(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """force_full_sync=True bypasses stored historyId."""
+        mock_tracker.get_history_id.return_value = "50000"
+        mock_gmail_client.discover_message_ids.return_value = iter([])
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingestor.run_discovery("INBOX", force_full_sync=True)
+
+        mock_gmail_client.discover_message_ids.assert_called_once()
+        mock_gmail_client.discover_message_ids_incremental.assert_not_called()
+        # Still stores the new historyId
+        mock_tracker.set_history_id.assert_called_once_with("INBOX", "12345")
+
+    def test_stores_history_id_on_first_run(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """First run (no stored historyId) does full discovery and stores historyId."""
+        mock_tracker.get_history_id.return_value = None
+        mock_gmail_client.discover_message_ids.return_value = iter([])
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingestor.run_discovery("INBOX")
+
+        mock_gmail_client.discover_message_ids.assert_called_once()
+        mock_tracker.set_history_id.assert_called_once_with("INBOX", "12345")
+
+    def test_history_id_not_stored_when_profile_fails(
+        self,
+        tmp_settings: GmailIngestorSettings,
+        mock_gmail_client: MagicMock,
+        mock_parser: MagicMock,
+        mock_converter: MagicMock,
+        mock_tracker: MagicMock,
+        mock_raw_store: MagicMock,
+        mock_writer: MagicMock,
+    ) -> None:
+        """historyId is not stored if get_profile_history_id fails."""
+        mock_tracker.get_history_id.return_value = None
+        mock_gmail_client.get_profile_history_id.side_effect = Exception("API error")
+        mock_gmail_client.discover_message_ids.return_value = iter([])
+
+        ingestor = _build_ingestor(
+            tmp_settings, mock_gmail_client, mock_parser, mock_converter,
+            mock_tracker, mock_raw_store, mock_writer,
+        )
+
+        ingestor.run_discovery("INBOX")
+
+        mock_tracker.set_history_id.assert_not_called()
 
 
 # ---------- run_fetch_pending ----------

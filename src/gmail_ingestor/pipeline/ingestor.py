@@ -12,7 +12,12 @@ from typing import Any
 from gmail_ingestor.config.settings import GmailIngestorSettings
 from gmail_ingestor.core.auth import authenticate, build_gmail_service
 from gmail_ingestor.core.converter import MarkdownConverter
-from gmail_ingestor.core.exceptions import ConversionError, GmailIngestorError, RateLimitError
+from gmail_ingestor.core.exceptions import (
+    ConversionError,
+    GmailIngestorError,
+    HistoryExpiredError,
+    RateLimitError,
+)
 from gmail_ingestor.core.gmail_client import GmailClient
 from gmail_ingestor.core.models import EmailBody, EmailHeader, FetchProgress
 from gmail_ingestor.core.parser import GmailParser
@@ -97,6 +102,7 @@ class EmailIngestor:
         limit: int | None = None,
         offset: int = 0,
         batch_size: int | None = None,
+        force_full_sync: bool = False,
     ) -> FetchProgress:
         """Run the full three-stage pipeline.
 
@@ -106,6 +112,7 @@ class EmailIngestor:
             limit: Cap total messages discovered (applies to discovery only).
             offset: Skip first N discovered messages (applies to discovery only).
             batch_size: Override batch size for fetch/convert stages.
+            force_full_sync: Skip incremental sync and re-scan all message IDs.
 
         Returns:
             FetchProgress with final counts.
@@ -119,7 +126,10 @@ class EmailIngestor:
 
         try:
             self._sync_labels()
-            self.run_discovery(label, query=query, limit=limit, offset=offset)
+            self.run_discovery(
+                label, query=query, limit=limit, offset=offset,
+                force_full_sync=force_full_sync,
+            )
             self.run_fetch_pending(batch_size=batch_size)
             self.run_convert_pending(batch_size=batch_size)
 
@@ -147,14 +157,20 @@ class EmailIngestor:
         *,
         limit: int | None = None,
         offset: int = 0,
+        force_full_sync: bool = False,
     ) -> int:
         """Stage 1: Discover message IDs and insert as pending.
 
+        Uses incremental sync via Gmail history.list when a stored historyId
+        exists, falling back to full discovery on first run, expired historyId,
+        --query usage, or --full-sync flag.
+
         Args:
             label_id: Gmail label ID (defaults to settings.label).
-            query: Optional Gmail search query.
+            query: Optional Gmail search query (forces full discovery).
             limit: Cap total messages inserted. None means unlimited.
             offset: Skip the first N discovered stubs before inserting.
+            force_full_sync: Skip incremental sync and re-scan all message IDs.
 
         Returns the number of newly discovered IDs.
         """
@@ -164,12 +180,76 @@ class EmailIngestor:
         self._progress.current_stage = "discovery"
         self._notify()
 
+        # Determine whether incremental sync is possible
+        use_incremental = False
+        stored_history_id: str | None = None
+
+        if query:
+            logger.info("Query set — using full discovery (history API doesn't support queries)")
+        elif force_full_sync:
+            logger.info("--full-sync requested — using full discovery")
+        else:
+            stored_history_id = tracker.get_history_id(label)
+            if stored_history_id:
+                use_incremental = True
+            else:
+                logger.info("No stored historyId for label %s — using full discovery", label)
+
+        # Capture current historyId BEFORE discovery starts so messages
+        # arriving during discovery are caught on the next incremental run
+        new_history_id: str | None = None
+        try:
+            new_history_id = client.get_profile_history_id()
+            logger.debug("Captured historyId %s before discovery", new_history_id)
+        except Exception as e:
+            logger.warning("Failed to get profile historyId (non-fatal): %s", e)
+
+        # Run discovery (incremental or full)
+        if use_incremental and stored_history_id:
+            try:
+                logger.info(
+                    "Incremental sync for label %s from historyId %s",
+                    label, stored_history_id,
+                )
+                total_new = self._discover_from_history(
+                    label, stored_history_id, limit=limit, offset=offset,
+                )
+            except HistoryExpiredError:
+                logger.warning(
+                    "historyId %s expired for label %s — falling back to full discovery",
+                    stored_history_id, label,
+                )
+                total_new = self._discover_full(label, query=query, limit=limit, offset=offset)
+        else:
+            total_new = self._discover_full(label, query=query, limit=limit, offset=offset)
+
+        # Persist the new historyId after successful discovery
+        if new_history_id:
+            tracker.set_history_id(label, new_history_id)
+            logger.debug("Stored historyId %s for label %s", new_history_id, label)
+
+        return total_new
+
+    def _discover_full(
+        self,
+        label_id: str,
+        query: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> int:
+        """Full discovery: paginate all message IDs for a label via messages.list.
+
+        Returns the number of newly discovered IDs.
+        """
+        client, tracker, _, _ = self._ensure_initialized()
+
         total_new = 0
         total_seen = 0
         total_collected = 0
 
         for page in client.discover_message_ids(
-            label, self._settings.max_results_per_page, query=query
+            label_id, self._settings.max_results_per_page, query=query
         ):
             stubs_to_insert: list[tuple[str, str]] = []
 
@@ -187,12 +267,63 @@ class EmailIngestor:
                     break
 
             if stubs_to_insert:
-                inserted = tracker.bulk_insert_pending(stubs_to_insert, label)
+                inserted = tracker.bulk_insert_pending(stubs_to_insert, label_id)
                 total_new += inserted
                 self._progress.ids_discovered += len(stubs_to_insert)
                 self._notify()
                 logger.info(
                     "Discovery page: %d IDs (%d new)", len(stubs_to_insert), inserted
+                )
+
+            if limit is not None and total_collected >= limit:
+                break
+
+        return total_new
+
+    def _discover_from_history(
+        self,
+        label_id: str,
+        start_history_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> int:
+        """Incremental discovery: use history.list to find only new messages.
+
+        Returns the number of newly discovered IDs.
+
+        Raises:
+            HistoryExpiredError: When the stored historyId has expired (404).
+        """
+        client, tracker, _, _ = self._ensure_initialized()
+
+        total_new = 0
+        total_seen = 0
+        total_collected = 0
+
+        for page in client.discover_message_ids_incremental(start_history_id, label_id):
+            stubs_to_insert: list[tuple[str, str]] = []
+
+            for stub in page:
+                total_seen += 1
+
+                if total_seen <= offset:
+                    continue
+
+                stubs_to_insert.append((stub.message_id, stub.thread_id))
+                total_collected += 1
+
+                if limit is not None and total_collected >= limit:
+                    break
+
+            if stubs_to_insert:
+                inserted = tracker.bulk_insert_pending(stubs_to_insert, label_id)
+                total_new += inserted
+                self._progress.ids_discovered += len(stubs_to_insert)
+                self._notify()
+                logger.info(
+                    "Incremental discovery page: %d IDs (%d new)",
+                    len(stubs_to_insert), inserted,
                 )
 
             if limit is not None and total_collected >= limit:

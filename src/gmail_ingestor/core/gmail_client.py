@@ -12,7 +12,7 @@ from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
 from googleapiclient.http import BatchHttpRequest
 
-from gmail_ingestor.core.exceptions import GmailIngestorError, RateLimitError
+from gmail_ingestor.core.exceptions import GmailIngestorError, HistoryExpiredError, RateLimitError
 from gmail_ingestor.core.models import MessageStub
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,93 @@ class GmailClient:
             ]
             logger.debug("Discovered %d message IDs (page)", len(stubs))
             yield stubs
+
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return
+
+    def get_profile_history_id(self) -> str:
+        """Get the current historyId from the user's Gmail profile.
+
+        This captures the latest historyId BEFORE discovery, so any messages
+        arriving during discovery are caught on the next incremental sync.
+        """
+        request = self._service.users().getProfile(userId=self._user_id)
+        response = self._execute_with_retry(request, "get profile")
+        return str(response["historyId"])
+
+    def discover_message_ids_incremental(
+        self,
+        start_history_id: str,
+        label_id: str,
+    ) -> Generator[list[MessageStub], None, None]:
+        """Discover new message IDs since a historyId using history.list.
+
+        Calls history.list with historyTypes=['messageAdded'] and labelId filter,
+        paginates through results, and deduplicates message IDs per page.
+
+        Args:
+            start_history_id: The historyId from the last successful sync.
+            label_id: Gmail label ID to filter history events.
+
+        Yields:
+            Lists of MessageStub objects, one list per API page.
+
+        Raises:
+            HistoryExpiredError: When the historyId is no longer valid (404).
+        """
+        page_token: str | None = None
+        first_page = True
+
+        while True:
+            if not first_page and self._inter_page_delay > 0:
+                time.sleep(self._inter_page_delay)
+            first_page = False
+
+            kwargs: dict[str, Any] = {
+                "userId": self._user_id,
+                "startHistoryId": start_history_id,
+                "historyTypes": ["messageAdded"],
+                "labelId": label_id,
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+
+            request = self._service.users().history().list(**kwargs)
+
+            try:
+                response = self._execute_with_retry(request, "incremental discovery")
+            except GmailIngestorError as e:
+                # Check if the underlying cause is a 404 (expired historyId)
+                if "404" in str(e) or (
+                    hasattr(e, "__cause__")
+                    and isinstance(e.__cause__, HttpError)
+                    and e.__cause__.status_code == 404
+                ):
+                    raise HistoryExpiredError(
+                        f"historyId {start_history_id} expired: {e}"
+                    ) from e
+                raise
+
+            history_records = response.get("history", [])
+            if not history_records:
+                return
+
+            # Deduplicate message IDs within this page
+            seen: set[str] = set()
+            stubs: list[MessageStub] = []
+            for record in history_records:
+                for msg_added in record.get("messagesAdded", []):
+                    msg = msg_added.get("message", {})
+                    msg_id = msg.get("id")
+                    thread_id = msg.get("threadId", "")
+                    if msg_id and msg_id not in seen:
+                        seen.add(msg_id)
+                        stubs.append(MessageStub(message_id=msg_id, thread_id=thread_id))
+
+            if stubs:
+                logger.debug("Incremental discovery: %d new message IDs (page)", len(stubs))
+                yield stubs
 
             page_token = response.get("nextPageToken")
             if not page_token:

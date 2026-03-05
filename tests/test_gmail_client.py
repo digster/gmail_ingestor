@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gmail_ingestor.core.exceptions import GmailIngestorError, RateLimitError
+from gmail_ingestor.core.exceptions import GmailIngestorError, HistoryExpiredError, RateLimitError
 from gmail_ingestor.core.gmail_client import GmailClient, _is_rate_limit_error
 from gmail_ingestor.core.models import MessageStub
 
@@ -557,3 +557,141 @@ class TestFetchMessagesBatch:
         result = client.fetch_messages_batch([])
 
         assert result == []
+
+
+# ---------- get_profile_history_id ----------
+
+
+class TestGetProfileHistoryId:
+    """Tests for GmailClient.get_profile_history_id()."""
+
+    def test_returns_history_id_string(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        mock_service.users().getProfile().execute.return_value = {
+            "emailAddress": "user@example.com",
+            "historyId": "67890",
+        }
+        result = client.get_profile_history_id()
+        assert result == "67890"
+
+    def test_converts_int_history_id_to_string(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        mock_service.users().getProfile().execute.return_value = {
+            "historyId": 12345,
+        }
+        result = client.get_profile_history_id()
+        assert result == "12345"
+        assert isinstance(result, str)
+
+    def test_raises_on_api_error(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        mock_service.users().getProfile().execute.side_effect = Exception("API down")
+        with pytest.raises(GmailIngestorError, match="Failed to get profile"):
+            client.get_profile_history_id()
+
+
+# ---------- discover_message_ids_incremental ----------
+
+
+class TestDiscoverMessageIdsIncremental:
+    """Tests for GmailClient.discover_message_ids_incremental()."""
+
+    def test_yields_new_messages_from_history(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Extracts messagesAdded from history records."""
+        mock_service.users().history().list().execute.return_value = {
+            "history": [
+                {
+                    "messagesAdded": [
+                        {"message": {"id": "msg1", "threadId": "t1"}},
+                        {"message": {"id": "msg2", "threadId": "t2"}},
+                    ]
+                }
+            ],
+            "historyId": "99999",
+        }
+
+        pages = list(client.discover_message_ids_incremental("10000", "INBOX"))
+
+        assert len(pages) == 1
+        assert pages[0] == [
+            MessageStub(message_id="msg1", thread_id="t1"),
+            MessageStub(message_id="msg2", thread_id="t2"),
+        ]
+
+    def test_deduplicates_within_page(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Duplicate message IDs within the same page are deduplicated."""
+        mock_service.users().history().list().execute.return_value = {
+            "history": [
+                {"messagesAdded": [{"message": {"id": "msg1", "threadId": "t1"}}]},
+                {"messagesAdded": [{"message": {"id": "msg1", "threadId": "t1"}}]},
+            ],
+        }
+
+        pages = list(client.discover_message_ids_incremental("10000", "INBOX"))
+
+        assert len(pages) == 1
+        assert len(pages[0]) == 1
+
+    def test_handles_empty_history(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Returns nothing when history has no records."""
+        mock_service.users().history().list().execute.return_value = {
+            "historyId": "99999",
+        }
+
+        pages = list(client.discover_message_ids_incremental("10000", "INBOX"))
+        assert pages == []
+
+    def test_paginates_with_next_page_token(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Follows nextPageToken across pages."""
+        page1 = {
+            "history": [
+                {"messagesAdded": [{"message": {"id": "msg1", "threadId": "t1"}}]},
+            ],
+            "nextPageToken": "tok2",
+        }
+        page2 = {
+            "history": [
+                {"messagesAdded": [{"message": {"id": "msg2", "threadId": "t2"}}]},
+            ],
+        }
+        mock_list = mock_service.users().history().list
+        mock_list.return_value.execute.side_effect = [page1, page2]
+
+        pages = list(client.discover_message_ids_incremental("10000", "INBOX"))
+
+        assert len(pages) == 2
+        assert pages[0][0].message_id == "msg1"
+        assert pages[1][0].message_id == "msg2"
+
+    def test_raises_history_expired_on_404(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Raises HistoryExpiredError when the API returns a 404."""
+        mock_service.users().history().list().execute.side_effect = Exception(
+            "HttpError 404: historyId not found"
+        )
+
+        with pytest.raises(HistoryExpiredError, match="expired"):
+            list(client.discover_message_ids_incremental("10000", "INBOX"))
+
+    def test_non_404_error_propagates(
+        self, client: GmailClient, mock_service: MagicMock
+    ) -> None:
+        """Non-404 errors propagate as GmailIngestorError."""
+        mock_service.users().history().list().execute.side_effect = Exception(
+            "Server error 500"
+        )
+
+        with pytest.raises(GmailIngestorError, match="Failed to incremental discovery"):
+            list(client.discover_message_ids_incremental("10000", "INBOX"))

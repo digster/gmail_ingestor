@@ -83,6 +83,13 @@ def main() -> None:
     fetch_parser = subparsers.add_parser("fetch", help="Fetch and convert emails")
     fetch_parser.add_argument("--label", "-l", help="Gmail label ID (default: from settings)")
     fetch_parser.add_argument("--query", "-q", help="Gmail search query")
+    fetch_parser.add_argument(
+        "--full-sync",
+        action="store_true",
+        default=False,
+        dest="full_sync",
+        help="Skip incremental sync and re-scan all message IDs",
+    )
     _add_pagination_args(fetch_parser)
 
     # status command
@@ -97,6 +104,13 @@ def main() -> None:
     )
     discover_parser.add_argument("--label", "-l", help="Gmail label ID")
     discover_parser.add_argument("--query", "-q", help="Gmail search query")
+    discover_parser.add_argument(
+        "--full-sync",
+        action="store_true",
+        default=False,
+        dest="full_sync",
+        help="Skip incremental sync and re-scan all message IDs",
+    )
     _add_pagination_args(discover_parser)
 
     # fetch-pending command
@@ -149,6 +163,7 @@ def main() -> None:
                     limit=args.limit,
                     offset=args.offset,
                     batch_size=args.batch_size,
+                    force_full_sync=args.full_sync,
                 )
             print(f"\n\nComplete: {progress}")
 
@@ -179,6 +194,7 @@ def main() -> None:
                     query=query,
                     limit=args.limit,
                     offset=args.offset,
+                    force_full_sync=args.full_sync,
                 )
                 total_count += count
             print(f"\n\nDiscovered {total_count} new message IDs")

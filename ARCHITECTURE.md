@@ -36,12 +36,24 @@ Gmail Ingestor is a Python library that fetches emails from Gmail by label and c
 The `EmailIngestor.run()` processes emails in mini-batches for bounded memory:
 
 ```
-Stage 1 - Discovery   │ Paginate message IDs → filter already-tracked → insert as 'pending'
+Stage 1 - Discovery   │ Incremental (history.list) or full (messages.list) → insert as 'pending'
 Stage 2 - Fetch        │ Batch API fetch → parse MIME → save raw text/html → mark 'fetched'
 Stage 3 - Convert      │ trafilatura HTML→text → write .md file → mark 'converted'
 ```
 
 Each stage is independently callable (`run_discovery`, `run_fetch_pending`, `run_convert_pending`) for resume/retry scenarios. If the process crashes mid-fetch, re-running picks up from where it left off.
+
+### Incremental Sync (historyId)
+
+Discovery uses Gmail's `history.list` API for efficient incremental sync:
+
+```
+First run:       No historyId → full messages.list scan → store historyId
+Subsequent runs: history.list(startHistoryId) → only new messageAdded events
+Expired history: 404 from history.list → fallback to full scan → store fresh historyId
+```
+
+The `sync_state` table stores per-label historyIds. The historyId is captured BEFORE discovery starts (via `getProfile`), so messages arriving during discovery are caught on the next incremental run. The `--full-sync` CLI flag and `--query` parameter both bypass incremental sync (history API doesn't support search queries).
 
 ## Key Data Flow
 
@@ -66,13 +78,14 @@ pending → fetched → converted
 
 The `fetch_runs` table provides audit history of each ingestion run.
 
-### Label Storage
+### Label & Sync Storage
 
-Labels are stored in two additional tables:
+Labels and sync state are stored in additional tables:
 
 ```
 labels           → label_id (PK) → label_name, updated_at   (synced from Gmail API)
 message_labels   → (message_id, label_id) composite PK      (per-message label junction)
+sync_state       → label_id (PK) → history_id, updated_at   (per-label incremental sync cursor)
 ```
 
 At the start of each `run()`, `_sync_labels()` fetches all labels from Gmail and upserts them into the `labels` table. During Stage 2 (fetch), each message's `labelIds` are persisted to `message_labels`. During Stage 3 (convert), labels are hydrated via JOIN and injected into `EmailHeader` for frontmatter generation.
@@ -85,11 +98,11 @@ src/gmail_ingestor/
 │   ├── models.py       # Frozen dataclasses (MessageStub, EmailHeader, EmailBody, EmailMessage, ConvertedEmail, FetchProgress)
 │   ├── exceptions.py   # Exception hierarchy (GmailIngestorError → Auth/RateLimit/Parse/Conversion)
 │   ├── auth.py         # OAuth 2.0 with token caching, SCOPES = gmail.readonly
-│   ├── gmail_client.py # GmailClient: list_labels, discover_message_ids (generator), fetch_messages_batch, _execute_with_retry
+│   ├── gmail_client.py # GmailClient: list_labels, discover_message_ids (generator), discover_message_ids_incremental, get_profile_history_id, fetch_messages_batch
 │   ├── parser.py       # GmailParser: recursive MIME walk, base64url decode, header extraction
 │   └── converter.py    # MarkdownConverter: trafilatura + fallback + YAML front matter
 ├── storage/
-│   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs + labels + message_labels tables
+│   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs + labels + message_labels + sync_state tables
 │   ├── raw_store.py    # RawEmailStore: saves original text/html to output/raw/
 │   └── writer.py       # MarkdownWriter: {slug}_{id}.md naming, Unicode-safe slugify
 ├── pipeline/
