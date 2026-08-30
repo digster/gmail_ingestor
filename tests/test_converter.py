@@ -6,6 +6,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from gmail_ingestor.core.converter import MarkdownConverter
 from gmail_ingestor.core.exceptions import ConversionError
@@ -127,6 +128,7 @@ class TestYamlFrontMatter:
 
         assert result.markdown.startswith("---\n")
         assert "---" in result.markdown
+        assert f'id: "{MESSAGE_ID}"' in result.markdown
         assert 'subject: "Test Subject"' in result.markdown
         assert 'from: "sender@example.com"' in result.markdown
         assert 'to: "recipient@example.com"' in result.markdown
@@ -295,3 +297,137 @@ class TestConvertedEmailResult:
         assert len(parts) >= 3
         assert sample_body_text_only.plain_text is not None
         assert sample_body_text_only.plain_text in parts[2]
+
+
+class TestFrontMatterMessageId:
+    """The Gmail message ID is carried in the front matter, not just the filename."""
+
+    def test_id_is_the_first_field(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        """id leads the block so identity is the first thing a reader (or parser) sees."""
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, sample_header, sample_body_text_only)
+
+        lines = result.markdown.splitlines()
+        assert lines[0] == "---"
+        assert lines[1] == f'id: "{MESSAGE_ID}"'
+
+    def test_id_round_trips_as_a_string(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        """A real YAML parse returns the ID unchanged, as a str."""
+        converter = MarkdownConverter()
+        result = converter.convert("1859327d0f2c81aa", sample_header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["id"] == "1859327d0f2c81aa"
+        assert isinstance(meta["id"], str)
+
+    def test_all_numeric_id_stays_a_string(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        """Regression: ~30 live Gmail IDs are all digits.
+
+        Unquoted, yaml.safe_load would hand downstream consumers an int and every
+        `id == message_id` comparison would silently fail for exactly those emails.
+        """
+        converter = MarkdownConverter()
+        result = converter.convert("1637675546614607", sample_header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["id"] == "1637675546614607"
+        assert isinstance(meta["id"], str)
+
+    def test_front_matter_is_valid_yaml_alongside_other_fields(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        """Adding id does not break parsing of the fields that were already there."""
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, sample_header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["subject"] == "Test Subject"
+        assert meta["from"] == "sender@example.com"
+        assert meta["to"] == "recipient@example.com"
+
+
+def _parse_front_matter(markdown: str) -> dict:
+    """Parse the YAML front matter block the same way downstream tools do."""
+    assert markdown.startswith("---\n")
+    end = markdown.index("\n---", 4)
+    return yaml.safe_load(markdown[4:end])
+
+
+class TestYamlEscaping:
+    """Front matter must survive a real YAML parse, whatever the headers contain."""
+
+    def test_backslash_in_sender_stays_parseable(
+        self, sample_body_text_only: EmailBody
+    ) -> None:
+        """Regression: RFC 2822 quoted-strings put literal backslashes in From:.
+
+        Escaping only quotes left `\\"` in the output, which YAML reads as an escaped
+        backslash followed by a string-terminating quote — 16 live files were
+        unparseable, so ingestor-tools skipped those emails entirely.
+        """
+        raw_sender = '"\\"Mr. and Mrs. Psmith\u2019s Bookshelf\\"" <thepsmiths@substack.com>'
+        header = EmailHeader(
+            subject="BRIEFLY NOTED: Mathematical Mayhem",
+            sender=raw_sender,
+            to="reader@example.com",
+            date=datetime(2024, 1, 15, 10, 30, 0),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["from"] == raw_sender
+
+    def test_backslash_in_subject_stays_parseable(
+        self, sample_header: EmailHeader, sample_body_text_only: EmailBody
+    ) -> None:
+        header = EmailHeader(
+            subject='Path C:\\Users\\test and a "quote"',
+            sender="a@b.com",
+            to="c@d.com",
+            date=datetime(2024, 1, 15, 10, 30, 0),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["subject"] == 'Path C:\\Users\\test and a "quote"'
+
+    def test_backslash_in_labels_stays_parseable(
+        self, sample_body_text_only: EmailBody
+    ) -> None:
+        header = EmailHeader(
+            subject="Test",
+            sender="a@b.com",
+            to="c@d.com",
+            date=datetime(2024, 1, 15, 10, 30, 0),
+            label_names=("back\\slash", 'quo"te'),
+            label_ids=("Label_1", "Label_2"),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["labels"] == ["back\\slash", 'quo"te']
+
+    def test_trailing_backslash_does_not_escape_the_closing_quote(
+        self, sample_body_text_only: EmailBody
+    ) -> None:
+        """A value ending in a backslash is the sharpest form of the bug."""
+        header = EmailHeader(
+            subject="ends with a backslash\\",
+            sender="a@b.com",
+            to="c@d.com",
+            date=datetime(2024, 1, 15, 10, 30, 0),
+        )
+        converter = MarkdownConverter()
+        result = converter.convert(MESSAGE_ID, header, sample_body_text_only)
+
+        meta = _parse_front_matter(result.markdown)
+        assert meta["subject"] == "ends with a backslash\\"

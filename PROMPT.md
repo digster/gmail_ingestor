@@ -33,3 +33,16 @@ Change markdown file naming from `{date}_{slug}_{id}.md` to `{slug}_{id}.md`. Re
 ## 2026-03-04 (2)
 
 Add historyId-based incremental sync to discovery. Uses Gmail `history.list` API with stored `historyId` to discover only new messages since last run, falling back to full discovery on first run, expired historyId (404), `--query` usage, or `--full-sync` flag. New `sync_state` table, `HistoryExpiredError` exception, `get_profile_history_id()` and `discover_message_ids_incremental()` GmailClient methods. Refactored `run_discovery()` into `_discover_full()` + `_discover_from_history()`. Added `--full-sync` CLI flag to `fetch` and `discover` commands.
+
+## 2026-08-29: Use longer hashes (full Gmail message IDs)
+
+While working on an issue in `../newsletters-web`, Claude found that the 8-char "hash
+prefix" directories collide: 11 directories in `../newsletters` hold two distinct emails'
+`.html`/`.txt` but only one `.md`, so the second email never reaches the site. The short
+hash originates in this project (`../output`), flows through `../ingestor-tools` into
+`../newsletters`, and `../newsletters-web` builds from there.
+
+Asked to update this project to use longer hashes, and to analyse the impact on the DB and
+existing output — specifically whether the short hashes can be renamed to the new longer
+ones instead of re-running the whole pipeline, and where a re-run is unavoidable. Follow-up
+question on whether the git-LFS-tracked `../newsletters-web/emails` output is affected.

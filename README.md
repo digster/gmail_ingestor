@@ -139,14 +139,15 @@ ingestor.close()
 Markdown files are written to `output/markdown/` with the naming convention:
 
 ```
-{slug}_{id}.md
-# Example: weekly-newsletter_18a3f2b0.md
+{slug}_{message_id}.md
+# Example: weekly-newsletter_18a3f2b0deadbeef.md
 ```
 
 Each file includes YAML front matter:
 
 ```yaml
 ---
+id: "18a3f2b0deadbeef"
 subject: "Weekly Newsletter"
 from: "newsletter@example.com"
 to: "you@gmail.com"
@@ -156,7 +157,36 @@ label_ids: ["INBOX", "Label_42"]
 ---
 ```
 
-Raw email content (original text/HTML) is preserved in `output/raw/`.
+The **full** Gmail message ID is used in both the filename and the `id` front-matter
+field. Gmail IDs are time-ordered, so any truncated prefix collides for emails that
+arrive close together — and because `message_id` is the primary key of the `messages`
+table, the full form makes filename collisions impossible. The `id` field means
+downstream consumers can identify a message from the file's contents alone, without
+parsing the filename.
+
+Raw email content (original text/HTML) is preserved in `output/raw/` as
+`{message_id}.txt` and `{message_id}.html`, matching the markdown suffix exactly.
+
+### Migrating older output
+
+Output written before this convention used `{slug}_{message_id[:8]}.md` and had no `id`
+front-matter field. `scripts/migrate_full_message_ids.py` renames those files, updates
+`messages.markdown_path`, and backfills the `id` field — driven entirely by the local
+SQLite DB, with no Gmail API calls and no re-conversion:
+
+```bash
+uv run python scripts/migrate_full_message_ids.py              # dry run (default)
+uv run python scripts/migrate_full_message_ids.py --apply
+uv run python scripts/migrate_full_message_ids.py --verify
+```
+
+It backs the DB up first and writes a journal that `--rollback <journal>` can replay in
+reverse. Every phase is idempotent, so it is safe to re-run after an interruption.
+
+`--repair-front-matter` is a separate pass that rewrites front matter a YAML parser
+rejects; add `--apply-repair` to write the fixes. It exists because the converter used
+to escape quotes but not backslashes, so headers containing a backslash produced
+unparseable YAML that downstream tools skipped outright.
 
 ## Development
 

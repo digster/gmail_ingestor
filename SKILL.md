@@ -89,10 +89,11 @@ Each stage is independently resumable — crash mid-fetch and re-run picks up wh
 
 ## Output Format
 
-**Markdown** (`output/markdown/`): `{slug}_{id}.md`
+**Markdown** (`output/markdown/`): `{slug}_{message_id}.md` — the *full* 16-char Gmail ID
 
 ```yaml
 ---
+id: "18a3f2b0deadbeef"
 subject: "Weekly Newsletter"
 from: "newsletter@example.com"
 to: "you@gmail.com"
@@ -103,7 +104,17 @@ label_ids: ["INBOX", "Label_42"]
 # Converted body content here...
 ```
 
-**Raw** (`output/raw/`): `{id}.txt` and `{id}.html` — original email bodies preserved for re-conversion.
+**Raw** (`output/raw/`): `{message_id}.txt` and `{message_id}.html` — original email bodies
+preserved for re-conversion. The suffix matches the markdown filename exactly.
+
+Never truncate the message ID. Gmail IDs are time-ordered, so a prefix collides for emails
+that arrive close together — an 8-char prefix collided 6 times across 17k messages and
+corrupted the downstream newsletter tree. Header values are escaped with
+`converter._escape_yaml` (backslashes before quotes); escaping quotes alone produces
+front matter that `yaml.safe_load` rejects.
+
+`scripts/migrate_full_message_ids.py` migrates pre-existing output to this convention
+(`--apply`, `--verify`, `--rollback`, `--repair-front-matter`) with no Gmail API calls.
 
 **SQLite** (`data/gmail_ingestor.db`): `messages` (status tracking + dedup), `fetch_runs` (audit history), `labels` (label ID→name lookup), `message_labels` (per-message label associations), `sync_state` (per-label historyId for incremental sync).
 

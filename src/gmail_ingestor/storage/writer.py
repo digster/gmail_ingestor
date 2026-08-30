@@ -22,8 +22,15 @@ class MarkdownWriter:
     def write(self, email: ConvertedEmail) -> Path:
         """Write a converted email to a markdown file.
 
-        File naming: {slug}_{id}.md
-        Example: weekly-newsletter_18a3f2b0.md
+        File naming: {slug}_{message_id}.md
+        Example: weekly-newsletter_18a3f2b0deadbeef.md
+
+        The *full* Gmail message ID is used, never a prefix. Gmail message IDs are
+        time-ordered, so truncating one discards exactly the bits that distinguish
+        emails arriving close together — a truncated ID collides far more often than
+        a truncated hash would. Since message_id is the PRIMARY KEY of the messages
+        table, the full form makes filename collisions structurally impossible, and
+        it matches RawEmailStore's {message_id}.txt / {message_id}.html naming.
 
         Args:
             email: Converted email with markdown content.
@@ -32,8 +39,7 @@ class MarkdownWriter:
             Path to the written file.
         """
         slug = self._slugify(email.header.subject)
-        short_id = email.message_id[:8]
-        filename = f"{slug}_{short_id}.md"
+        filename = f"{slug}_{email.message_id}.md"
 
         filepath = self._output_dir / filename
         filepath.write_text(email.markdown, encoding="utf-8")

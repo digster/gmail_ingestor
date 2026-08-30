@@ -30,6 +30,7 @@ output/raw/*
 !output/raw/.gitkeep
 data/*.db*
 data/*.sqlite
+data/migration_*.json
 !data/.gitkeep
 
 # OS

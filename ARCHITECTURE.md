@@ -61,9 +61,9 @@ The `sync_state` table stores per-label historyIds. The historyId is captured BE
 Gmail API  →  MessageStub (id, threadId)
            →  Raw JSON (format=full)
            →  GmailParser → EmailMessage (header + body)
-           →  RawEmailStore → {id}.txt, {id}.html (original preservation)
+           →  RawEmailStore → {message_id}.txt, {message_id}.html (original preservation)
            →  MarkdownConverter → ConvertedEmail (YAML front matter + body)
-           →  MarkdownWriter → {slug}_{id}.md
+           →  MarkdownWriter → {slug}_{message_id}.md
 ```
 
 ## State Machine
@@ -104,11 +104,15 @@ src/gmail_ingestor/
 ├── storage/
 │   ├── tracker.py      # FetchTracker: SQLite with WAL mode, messages + fetch_runs + labels + message_labels + sync_state tables
 │   ├── raw_store.py    # RawEmailStore: saves original text/html to output/raw/
-│   └── writer.py       # MarkdownWriter: {slug}_{id}.md naming, Unicode-safe slugify
+│   └── writer.py       # MarkdownWriter: {slug}_{message_id}.md naming, Unicode-safe slugify
 ├── pipeline/
 │   └── ingestor.py     # EmailIngestor: 3-stage orchestrator with progress callbacks
 └── config/
     └── settings.py     # GmailIngestorSettings via pydantic-settings (GMAIL_ env prefix)
+
+scripts/
+├── cli.py                        # argparse CLI over EmailIngestor
+└── migrate_full_message_ids.py   # one-time data migration (see "Message Identity" below)
 ```
 
 ## Rate Limiting & Retry
@@ -131,6 +135,43 @@ Atomic operations prevent corruption from mid-fetch crashes. O(1) dedup via PRIM
 ### Raw Email Preservation
 Original text/html saved to `output/raw/` during Stage 2. Enables re-conversion with different settings, debugging, and future analysis pipelines.
 
+### Message Identity & Naming
+
+The full Gmail message ID is the single identifier across every artifact:
+
+```
+output/markdown/{slug}_{message_id}.md      front matter also carries  id: "{message_id}"
+output/raw/{message_id}.txt
+output/raw/{message_id}.html
+messages.message_id                          PRIMARY KEY
+```
+
+**Never truncate it.** Markdown filenames previously used `message_id[:8]`. Gmail message
+IDs are time-ordered — the high bits are effectively a timestamp — so a prefix discards
+exactly the bits that separate emails arriving close together. Truncation therefore
+collides far more often than the birthday bound suggests: across 17,007 live messages a
+uniformly-random 32-bit prefix predicts ~0.03 collisions, but the real corpus had **6**,
+every pair delivered within ~2 hours of one another. Downstream tools that group by that
+prefix (`ingestor-tools`, which matches raw files with `startswith`) merged the pairs into
+one directory, and the site builder then published one email's body under another's
+headline.
+
+Because `message_id` is the primary key, `{slug}_{message_id}` is unique by construction —
+`MarkdownWriter.write` can keep its unconditional `write_text` with no risk of clobbering.
+
+The `id` front-matter field exists so consumers can identify a message from the file's
+contents rather than parsing its name. It is **quoted**: ~30 live Gmail IDs are all digits,
+and an unquoted value comes back from `yaml.safe_load` as an `int`.
+
+### YAML Front Matter Escaping
+
+`converter._escape_yaml` escapes backslashes *before* quotes. Order matters: inside a
+double-quoted YAML scalar `\\` is a literal backslash, so an unescaped one consumes the
+following escape and terminates the string early. Real Gmail `From:` headers contain
+backslashes (RFC 2822 quoted-strings), and escaping quotes alone produced 16 unparseable
+files that `ingestor-tools` skipped silently. `scripts/migrate_full_message_ids.py
+--repair-front-matter` rewrites files already in that state.
+
 ### CLI Pagination (--limit, --offset, --batch-size)
 All three pipeline stages accept `limit`, `offset`, and `batch_size` parameters. In the full `run()` pipeline, `limit`/`offset` apply to discovery only (capping what enters the DB), while `batch_size` overrides the configured batch size for fetch and convert stages. For `fetch-pending`/`convert-pending`, `offset` uses SQL `OFFSET` on every query — this is correct because processed items transition out of the pending/fetched pool, keeping skipped rows stable across loop iterations.
 
@@ -152,4 +193,11 @@ All three pipeline stages accept `limit`, `offset`, and `batch_size` parameters.
 uv run pytest tests/ -v              # Run tests
 uv run ruff check src/ tests/        # Lint
 uv run python scripts/cli.py --help  # CLI usage
+
+# One-time migration of pre-existing output to full message IDs (no Gmail API calls)
+uv run python scripts/migrate_full_message_ids.py            # dry run (default)
+uv run python scripts/migrate_full_message_ids.py --apply
+uv run python scripts/migrate_full_message_ids.py --verify
+uv run python scripts/migrate_full_message_ids.py --rollback data/migration_<ts>.json
+uv run python scripts/migrate_full_message_ids.py --repair-front-matter --apply-repair
 ```

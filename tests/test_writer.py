@@ -45,8 +45,8 @@ class TestWrite:
         writer = MarkdownWriter(tmp_output_dir)
         path = writer.write(sample_converted_email)
 
-        # Expected: weekly-newsletter_18a3f2b0.md
-        assert path.name == "weekly-newsletter_18a3f2b0.md"
+        # Expected: weekly-newsletter_18a3f2b0deadbeef.md
+        assert path.name == "weekly-newsletter_18a3f2b0deadbeef.md"
 
     def test_content_preserved(
         self, tmp_output_dir: Path, sample_converted_email: ConvertedEmail
@@ -65,7 +65,8 @@ class TestWrite:
 
         assert path.parent == tmp_output_dir
 
-    def test_short_id_is_first_8_chars(self, tmp_output_dir: Path) -> None:
+    def test_filename_uses_full_message_id(self, tmp_output_dir: Path) -> None:
+        """The full 16-char Gmail ID is used — never a truncated prefix."""
         header = EmailHeader(
             subject="Test",
             sender="a@b.com",
@@ -80,8 +81,40 @@ class TestWrite:
         writer = MarkdownWriter(tmp_output_dir)
         path = writer.write(email)
 
-        assert "abcdef12" in path.name
-        assert "abcdef1234567890" not in path.name
+        assert path.name == "test_abcdef1234567890.md"
+        assert path.stem.rsplit("_", 1)[-1] == "abcdef1234567890"
+
+    def test_ids_sharing_an_8_char_prefix_do_not_collide(
+        self, tmp_output_dir: Path
+    ) -> None:
+        """Regression: real Gmail IDs share 8-char prefixes when sent seconds apart.
+
+        Both emails here have the same subject *and* the same first 8 characters —
+        under the old `message_id[:8]` naming the second write silently clobbered
+        the first.
+        """
+        header = EmailHeader(
+            subject="Tuesday assorted links",
+            sender="a@b.com",
+            to="c@d.com",
+            date=datetime(2025, 2, 25),
+        )
+        writer = MarkdownWriter(tmp_output_dir)
+        first = writer.write(
+            ConvertedEmail(
+                message_id="1953e3be34f4d721", markdown="first", header=header
+            )
+        )
+        second = writer.write(
+            ConvertedEmail(
+                message_id="1953e3bed494d90c", markdown="second", header=header
+            )
+        )
+
+        assert first != second
+        assert first.read_text(encoding="utf-8") == "first"
+        assert second.read_text(encoding="utf-8") == "second"
+        assert len(list(tmp_output_dir.glob("*.md"))) == 2
 
 
 class TestFilenameWithSpecialSubjects:

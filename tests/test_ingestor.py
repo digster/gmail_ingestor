@@ -509,11 +509,11 @@ class TestRunConvertPending:
         )
         converted = ConvertedEmail(
             message_id="msg1",
-            markdown="---\nsubject: Test\n---\nHello world",
+            markdown='---\nid: "msg1"\nsubject: Test\n---\nHello world',
             header=header,
         )
         mock_converter.convert.return_value = converted
-        mock_writer.write.return_value = tmp_path / "output" / "2024-06-15_test_msg1.md"
+        mock_writer.write.return_value = tmp_path / "output" / "test_msg1.md"
 
         ingestor = _build_ingestor(
             tmp_settings,
